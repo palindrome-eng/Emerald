@@ -1,0 +1,10 @@
+pub const MAIN_SEED: &str = "main";
+pub const COMMUNITY_SEED: &str = "community_pool";
+pub const COLLECTION_SEED: &str = "collection";
+pub const SNAPSHOT_PEG_SEED: &str = "snapshot_peg";
+pub const COLLECTION_POLICY_SEED: &str = "collection_policy";
+pub const USER_ACCOUNT_SEED: &str = "user_account";
+pub const USER_COMMUNITY_ACCOUNT_SEED: &str = "user_community_account";
+pub const NFT_TICKET: &str = "nft_ticket";
+pub const LAMPORTS_PER_SOL: u64 = 1000000000;
+pub const DELEGATE_SEED: &str = "delegate";

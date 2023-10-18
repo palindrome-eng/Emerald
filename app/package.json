@@ -1,0 +1,27 @@
+{
+  "name": "@emerald/sdk",
+  "version": "1.0.0",
+  "description": "Official Typescript SDK of the Emerald - best NFT Staking protocol on Solana. Developed in Europe by 21|12 Foundation.",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/2112-Foundation/emerald-sdk.git"
+  },
+  "author": "zkchakra, 21|12 Foundation",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/2112-Foundation/emerald-sdk/issues"
+  },
+  "homepage": "https://github.com/2112-Foundation/emerald-sdk#readme",
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.28.1-beta.2",
+    "@metaplex-foundation/beet": "^0.7.1",
+    "@metaplex-foundation/beet-solana": "^0.4.0",
+    "@metaplex-foundation/js": "^0.19.5",
+    "@solana/spl-token": "^0.3.8",
+    "@solana/web3.js": "^1.78.5"
+  }
+}
