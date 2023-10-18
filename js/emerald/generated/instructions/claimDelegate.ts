@@ -12,23 +12,24 @@ import * as beetSolana from '@metaplex-foundation/beet-solana'
 
 /**
  * @category Instructions
- * @category ClaimSingle
+ * @category ClaimDelegate
  * @category generated
  */
-export type ClaimSingleInstructionArgs = {
+export type ClaimDelegateInstructionArgs = {
   communityIdx: number
   collectionIdx: number
   collectionPolicyIdx: number
   userCommunityAccountIdx: number
   nftMint: web3.PublicKey
+  owner: web3.PublicKey
 }
 /**
  * @category Instructions
- * @category ClaimSingle
+ * @category ClaimDelegate
  * @category generated
  */
-export const claimSingleStruct = new beet.BeetArgsStruct<
-  ClaimSingleInstructionArgs & {
+export const claimDelegateStruct = new beet.BeetArgsStruct<
+  ClaimDelegateInstructionArgs & {
     instructionDiscriminator: number[] /* size: 8 */
   }
 >(
@@ -39,16 +40,18 @@ export const claimSingleStruct = new beet.BeetArgsStruct<
     ['collectionPolicyIdx', beet.u32],
     ['userCommunityAccountIdx', beet.u32],
     ['nftMint', beetSolana.publicKey],
+    ['owner', beetSolana.publicKey],
   ],
-  'ClaimSingleInstructionArgs'
+  'ClaimDelegateInstructionArgs'
 )
 /**
- * Accounts required by the _claimSingle_ instruction
+ * Accounts required by the _claimDelegate_ instruction
  *
- * @property [_writable_, **signer**] user
+ * @property [_writable_, **signer**] delegate
  * @property [_writable_] mainPool
  * @property [_writable_] userAccount
  * @property [_writable_] userCommunityAccount
+ * @property [] delegatePda
  * @property [_writable_] communityPool
  * @property [] collection
  * @property [_writable_] nftTicket
@@ -56,51 +59,52 @@ export const claimSingleStruct = new beet.BeetArgsStruct<
  * @property [_writable_] rewardVault
  * @property [_writable_] userRewardAccount
  * @category Instructions
- * @category ClaimSingle
+ * @category ClaimDelegate
  * @category generated
  */
-export type ClaimSingleInstructionAccounts = {
-  user: web3.PublicKey
+export type ClaimDelegateInstructionAccounts = {
+  delegate: web3.PublicKey
   mainPool: web3.PublicKey
   userAccount: web3.PublicKey
   userCommunityAccount: web3.PublicKey
+  delegatePda: web3.PublicKey
   communityPool: web3.PublicKey
   collection: web3.PublicKey
   nftTicket: web3.PublicKey
   collectionPolicy: web3.PublicKey
   rewardVault: web3.PublicKey
   userRewardAccount: web3.PublicKey
-  tokenProgram?: web3.PublicKey
   systemProgram?: web3.PublicKey
+  tokenProgram?: web3.PublicKey
   anchorRemainingAccounts?: web3.AccountMeta[]
 }
 
-export const claimSingleInstructionDiscriminator = [
-  233, 35, 238, 119, 177, 204, 237, 108,
+export const claimDelegateInstructionDiscriminator = [
+  144, 102, 228, 230, 87, 241, 244, 128,
 ]
 
 /**
- * Creates a _ClaimSingle_ instruction.
+ * Creates a _ClaimDelegate_ instruction.
  *
  * @param accounts that will be accessed while the instruction is processed
  * @param args to provide as instruction data to the program
  *
  * @category Instructions
- * @category ClaimSingle
+ * @category ClaimDelegate
  * @category generated
  */
-export function createClaimSingleInstruction(
-  accounts: ClaimSingleInstructionAccounts,
-  args: ClaimSingleInstructionArgs,
+export function createClaimDelegateInstruction(
+  accounts: ClaimDelegateInstructionAccounts,
+  args: ClaimDelegateInstructionArgs,
   programId = new web3.PublicKey('2HLsq8QGhRnUUwuukCKLNdpvNc4utW6AQVV1VoY9jgEd')
 ) {
-  const [data] = claimSingleStruct.serialize({
-    instructionDiscriminator: claimSingleInstructionDiscriminator,
+  const [data] = claimDelegateStruct.serialize({
+    instructionDiscriminator: claimDelegateInstructionDiscriminator,
     ...args,
   })
   const keys: web3.AccountMeta[] = [
     {
-      pubkey: accounts.user,
+      pubkey: accounts.delegate,
       isWritable: true,
       isSigner: true,
     },
@@ -117,6 +121,11 @@ export function createClaimSingleInstruction(
     {
       pubkey: accounts.userCommunityAccount,
       isWritable: true,
+      isSigner: false,
+    },
+    {
+      pubkey: accounts.delegatePda,
+      isWritable: false,
       isSigner: false,
     },
     {
@@ -150,12 +159,12 @@ export function createClaimSingleInstruction(
       isSigner: false,
     },
     {
-      pubkey: accounts.tokenProgram ?? splToken.TOKEN_PROGRAM_ID,
+      pubkey: accounts.systemProgram ?? web3.SystemProgram.programId,
       isWritable: false,
       isSigner: false,
     },
     {
-      pubkey: accounts.systemProgram ?? web3.SystemProgram.programId,
+      pubkey: accounts.tokenProgram ?? splToken.TOKEN_PROGRAM_ID,
       isWritable: false,
       isSigner: false,
     },

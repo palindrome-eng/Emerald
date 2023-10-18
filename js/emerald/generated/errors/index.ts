@@ -596,13 +596,33 @@ createErrorFromNameLookup.set(
 )
 
 /**
+ * PolicyLocked: 'Unable to modify this policy'
+ *
+ * @category Errors
+ * @category generated
+ */
+export class PolicyLockedError extends Error {
+  readonly code: number = 0x1789
+  readonly name: string = 'PolicyLocked'
+  constructor() {
+    super('Unable to modify this policy')
+    if (typeof Error.captureStackTrace === 'function') {
+      Error.captureStackTrace(this, PolicyLockedError)
+    }
+  }
+}
+
+createErrorFromCodeLookup.set(0x1789, () => new PolicyLockedError())
+createErrorFromNameLookup.set('PolicyLocked', () => new PolicyLockedError())
+
+/**
  * IncorrectSuperAdmin: 'Incorrect admin provided'
  *
  * @category Errors
  * @category generated
  */
 export class IncorrectSuperAdminError extends Error {
-  readonly code: number = 0x1789
+  readonly code: number = 0x178a
   readonly name: string = 'IncorrectSuperAdmin'
   constructor() {
     super('Incorrect admin provided')
@@ -612,10 +632,33 @@ export class IncorrectSuperAdminError extends Error {
   }
 }
 
-createErrorFromCodeLookup.set(0x1789, () => new IncorrectSuperAdminError())
+createErrorFromCodeLookup.set(0x178a, () => new IncorrectSuperAdminError())
 createErrorFromNameLookup.set(
   'IncorrectSuperAdmin',
   () => new IncorrectSuperAdminError()
+)
+
+/**
+ * IncorrectSPLDecimals: 'Incorrect decimals. Exceeds 18'
+ *
+ * @category Errors
+ * @category generated
+ */
+export class IncorrectSPLDecimalsError extends Error {
+  readonly code: number = 0x178b
+  readonly name: string = 'IncorrectSPLDecimals'
+  constructor() {
+    super('Incorrect decimals. Exceeds 18')
+    if (typeof Error.captureStackTrace === 'function') {
+      Error.captureStackTrace(this, IncorrectSPLDecimalsError)
+    }
+  }
+}
+
+createErrorFromCodeLookup.set(0x178b, () => new IncorrectSPLDecimalsError())
+createErrorFromNameLookup.set(
+  'IncorrectSPLDecimals',
+  () => new IncorrectSPLDecimalsError()
 )
 
 /**
