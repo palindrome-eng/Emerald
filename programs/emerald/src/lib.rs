@@ -14,7 +14,7 @@ pub use user::*;
 pub use states::*;
 pub use common::*;
 
-declare_id!("FBjWvTHDWRKmezWPu1KCmmHZZiknntJKAiRZ6kNBUHfA");
+declare_id!("5Kmi2sHYKD76GySjL9Tkoi64eLwGpiZCW7zUpbpJ8B5m");
 
 #[program]
 pub mod emerald {
@@ -145,21 +145,21 @@ pub mod emerald {
     pub fn stake_nft<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, StakeNftToPool<'info>>,
         community_idx: u32,
-        _collection_idx: u32,
+        collection_idx: u32,
         _community_account: u32,
         _policy_idx: u32
     ) -> Result<()> {
-        stake_nft::stake_nft(ctx, community_idx)
+        stake_nft::stake_nft(ctx, community_idx, collection_idx)
     }
 
     pub fn unstake_nft<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, UnstakeNftToPool<'info>>,
         community_idx: u32,
-        _collection_idx: u32,
+        collection_idx: u32,
         _community_account: u32,
         _policy_idx: u32
     ) -> Result<()> {
-        unstake_nft::unstake_nft(ctx, community_idx)
+        unstake_nft::unstake_nft(ctx, community_idx, collection_idx)
     }
 
     pub fn claim_single<'a, 'b, 'c, 'info>(

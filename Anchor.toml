@@ -2,7 +2,7 @@
 seeds = false
 skip-lint = false
 [programs.localnet]
-emerald = "Ezsukb1BcrnYDw2wAe4Ryy45pAmHcB5ZNVXpZXg7Wsba"
+emerald = "5Kmi2sHYKD76GySjL9Tkoi64eLwGpiZCW7zUpbpJ8B5m"
 
 [registry]
 url = "https://api.apr.dev"

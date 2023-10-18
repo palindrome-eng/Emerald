@@ -957,210 +957,210 @@ describe("Emerald staking", async () => {
     }
   });
 
-  // it("Users unstakes some of NFTs", async () => {
-  //   // Wait for some tokens to accumulate
-  //   await delay(5);
+  it("Users unstakes some of NFTs", async () => {
+    // Wait for some tokens to accumulate
+    await delay(5);
 
-  //   try {
-  //     for (let user_idx = 0; user_idx < userz.users.length; user_idx++) {
-  //       let user: User = userz.users[user_idx];
-  //       console.log(
-  //         `\nuser[${user_idx}]: ${user.keypair.publicKey.toBase58()}`
-  //       );
-  //       let userStakedNtfs: StakedNft[] = user.getAllStakedNfts();
+    try {
+      for (let user_idx = 0; user_idx < userz.users.length; user_idx++) {
+        let user: User = userz.users[user_idx];
+        console.log(
+          `\nuser[${user_idx}]: ${user.keypair.publicKey.toBase58()}`
+        );
+        let userStakedNtfs: StakedNft[] = user.getAllStakedNfts();
 
-  //       for (let n = 0; n < userStakedNtfs.length; n += 1) {
-  //         // Extarct single staked NFT details
-  //         let sNFT = userStakedNtfs[n];
-  //         const community: Community = main.comByChainIdx(sNFT.communityIdx);
-  //         const collectionPDA: Collection =
-  //           community.collections[sNFT.collectionIdx];
-  //         const policy: Policy = collectionPDA.policies[sNFT.policyIdx];
-  //         const userCommunity: UserCommunity = user.getByCommunityIdx(
-  //           sNFT.communityIdx
-  //         );
+        for (let n = 0; n < userStakedNtfs.length; n += 1) {
+          // Extarct single staked NFT details
+          let sNFT = userStakedNtfs[n];
+          const community: Community = main.comByChainIdx(sNFT.communityIdx);
+          const collectionPDA: Collection =
+            community.collections[sNFT.collectionIdx];
+          const policy: Policy = collectionPDA.policies[sNFT.policyIdx];
+          const userCommunity: UserCommunity = user.getByCommunityIdx(
+            sNFT.communityIdx
+          );
 
-  //         // Get other nft details
-  //         const collection: NftMint0 = cm.collections[sNFT.collectionIdx];
-  //         const nftDeets: NftMint1 = cm.collections[
-  //           sNFT.collectionIdx
-  //         ].getNftByMint(sNFT.mint);
+          // Get other nft details
+          const collection: NftMint0 = cm.collections[sNFT.collectionIdx];
+          const nftDeets: NftMint1 = cm.collections[
+            sNFT.collectionIdx
+          ].getNftByMint(sNFT.mint);
 
-  //         const tx2 = await stakingProgram.methods
-  //           .unstakeNft(
-  //             sNFT.communityIdx,
-  //             sNFT.collectionIdx,
-  //             userCommunity.index,
-  //             sNFT.policyIdx
-  //           )
-  //           .accounts({
-  //             mainPool: main.address,
-  //             user: user.keypair.publicKey,
-  //             userAccount: user.userMainAccount,
-  //             userCommunityAccount: sNFT.userCommunityAddress,
-  //             communityPool: sNFT.communityAddress,
+          const tx2 = await stakingProgram.methods
+            .unstakeNft(
+              sNFT.communityIdx,
+              sNFT.collectionIdx,
+              userCommunity.index,
+              sNFT.policyIdx
+            )
+            .accounts({
+              mainPool: main.address,
+              user: user.keypair.publicKey,
+              userAccount: user.userMainAccount,
+              userCommunityAccount: sNFT.userCommunityAddress,
+              communityPool: sNFT.communityAddress,
 
-  //             // NFT PDA information accounts
-  //             unstakeNftTicket: sNFT.ticketPda,
+              // NFT PDA information accounts
+              unstakeNftTicket: sNFT.ticketPda,
 
-  //             // ATA derived from the token being unfrozen
-  //             userNftTokenAccount: await cm.getAta(
-  //               user.keypair.publicKey,
-  //               nftDeets.mint
-  //             ),
+              // ATA derived from the token being unfrozen
+              userNftTokenAccount: await cm.getAta(
+                user.keypair.publicKey,
+                nftDeets.mint
+              ),
 
-  //             // NFT accounts
-  //             nftMint: nftDeets.mint,
-  //             mintMetadata: nftDeets.metadata,
-  //             editionId: nftDeets.edition,
+              // NFT accounts
+              nftMint: nftDeets.mint,
+              mintMetadata: nftDeets.metadata,
+              editionId: nftDeets.edition,
 
-  //             // Master NFT accounts (NOT NEEDED)
-  //             collection: sNFT.collectionAddress,
-  //             collectionPolicy: sNFT.policyAddress,
-  //             masterMintMetadata: collection.masterMetadata,
+              // Master NFT accounts (NOT NEEDED)
+              collection: sNFT.collectionAddress,
+              collectionPolicy: sNFT.policyAddress,
+              masterMintMetadata: collection.masterMetadata,
 
-  //             // Metaplex program
-  //             tokenMetadataProgram: METAPLEX,
+              // Metaplex program
+              tokenMetadataProgram: METAPLEX,
 
-  //             // For payout
-  //             rewardVault: main.comByChainIdx(sNFT.communityIdx).rewardVault,
-  //             userRewardAccount: await community.getScAta(
-  //               user.keypair.publicKey
-  //             ),
-  //           })
-  //           .signers([user.keypair])
-  //           .rpc();
+              // For payout
+              rewardVault: main.comByChainIdx(sNFT.communityIdx).rewardVault,
+              userRewardAccount: await community.getScAta(
+                user.keypair.publicKey
+              ),
+            })
+            .signers([user.keypair])
+            .rpc();
 
-  //         // Log how long it was staked for
-  //         let timeElapased = secNow() - sNFT.stakeTime; //   addTimeSTamp(0, n, secNow());
+          // Log how long it was staked for
+          let timeElapased = secNow() - sNFT.stakeTime; //   addTimeSTamp(0, n, secNow());
 
-  //         let ratio = timeElapased / parseInt(policy.epoch.toString());
-  //         console.log(
-  //           `\tUnstaked NFT ${
-  //             sNFT.mint
-  //           } which was staked for: ${timeElapased.toFixed(1)}s or ${(
-  //             ratio * 100
-  //           ).toFixed(1)}% of the epoch duration which should yield ${(
-  //             parseInt(policy.rate.toString()) * ratio
-  //           ).toFixed(1)}`
-  //         );
-  //       }
-  //     }
-  //   } catch (e) {
-  //     console.log(e);
-  //   }
+          let ratio = timeElapased / parseInt(policy.epoch.toString());
+          console.log(
+            `\tUnstaked NFT ${
+              sNFT.mint
+            } which was staked for: ${timeElapased.toFixed(1)}s or ${(
+              ratio * 100
+            ).toFixed(1)}% of the epoch duration which should yield ${(
+              parseInt(policy.rate.toString()) * ratio
+            ).toFixed(1)}`
+          );
+        }
+      }
+    } catch (e) {
+      console.log(e);
+    }
 
-  //   // Tests need to assert that:
-  //   // - total NFT went down
-  //   // - collection  NFT went down
-  //   // - content of removeIdx = content of lastIdx
-  //   // - lasdIdx account is removed
-  //   // - owner can transfer NFT now elswhere
-  //   // - unstake fee is taken
-  //   // - owner has less staked NFTs
-  // });
-  // it("Change superadmin", async () => {
-  //   // let newSuperAdmin = await newAccountWithLamports(provider.connection, 10000000000);
-  //   // console.log("newSuperAdmin: ", newSuperAdmin.publicKey.toBase58());
-  //   let balanceStartAdmin: number = await provider.connection.getBalance(
-  //     superAdmin.publicKey
-  //   );
-  //   console.log(
-  //     "balanceStartAdmin in sol: ",
-  //     balanceStartAdmin / LAMPORTS_PER_SOL
-  //   );
+    // Tests need to assert that:
+    // - total NFT went down
+    // - collection  NFT went down
+    // - content of removeIdx = content of lastIdx
+    // - lasdIdx account is removed
+    // - owner can transfer NFT now elswhere
+    // - unstake fee is taken
+    // - owner has less staked NFTs
+  });
+  it("Change superadmin", async () => {
+    // let newSuperAdmin = await newAccountWithLamports(provider.connection, 10000000000);
+    // console.log("newSuperAdmin: ", newSuperAdmin.publicKey.toBase58());
+    let balanceStartAdmin: number = await provider.connection.getBalance(
+      superAdmin.publicKey
+    );
+    console.log(
+      "balanceStartAdmin in sol: ",
+      balanceStartAdmin / LAMPORTS_PER_SOL
+    );
 
-  //   try {
-  //     const tx2 = await stakingProgram.methods
-  //       .updateAdmin(superAdmin2.publicKey)
-  //       .accounts({
-  //         superAdmin: superAdmin.publicKey,
-  //         mainPool: main.address,
-  //       })
-  //       .signers([superAdmin])
-  //       .rpc();
-  //   } catch (e) {
-  //     console.log(e);
-  //   }
-  // });
-  // it("Old superadmin cannot withdraw SOL", async () => {
-  //   let mainPoolBalance: number = await provider.connection.getBalance(
-  //     main.address
-  //   );
-  //   console.log("mainPoolBalance in sol: ", mainPoolBalance / LAMPORTS_PER_SOL);
-  //   let balanceStartAdmin: number = await provider.connection.getBalance(
-  //     superAdmin.publicKey
-  //   );
-  //   console.log(
-  //     " OldAdmin balanceStart in sol: ",
-  //     balanceStartAdmin / LAMPORTS_PER_SOL
-  //   );
-  //   try {
-  //     const tx2 = await stakingProgram.methods
-  //       .withdrawMain()
-  //       .accounts({
-  //         superAdmin: superAdmin.publicKey,
-  //         mainPool: main.address,
-  //       })
-  //       .signers([superAdmin])
-  //       .rpc();
-  //   } catch (e) {
-  //     console.log("Withdraw failed succesfully");
-  //   }
-  //   let balanceEndAdmin: number = await provider.connection.getBalance(
-  //     superAdmin.publicKey
-  //   );
+    try {
+      const tx2 = await stakingProgram.methods
+        .updateAdmin(superAdmin2.publicKey)
+        .accounts({
+          superAdmin: superAdmin.publicKey,
+          mainPool: main.address,
+        })
+        .signers([superAdmin])
+        .rpc();
+    } catch (e) {
+      console.log(e);
+    }
+  });
+  it("Old superadmin cannot withdraw SOL", async () => {
+    let mainPoolBalance: number = await provider.connection.getBalance(
+      main.address
+    );
+    console.log("mainPoolBalance in sol: ", mainPoolBalance / LAMPORTS_PER_SOL);
+    let balanceStartAdmin: number = await provider.connection.getBalance(
+      superAdmin.publicKey
+    );
+    console.log(
+      " OldAdmin balanceStart in sol: ",
+      balanceStartAdmin / LAMPORTS_PER_SOL
+    );
+    try {
+      const tx2 = await stakingProgram.methods
+        .withdrawMain()
+        .accounts({
+          superAdmin: superAdmin.publicKey,
+          mainPool: main.address,
+        })
+        .signers([superAdmin])
+        .rpc();
+    } catch (e) {
+      console.log("Withdraw failed succesfully");
+    }
+    let balanceEndAdmin: number = await provider.connection.getBalance(
+      superAdmin.publicKey
+    );
 
-  //   let balanceEndMain: number = await provider.connection.getBalance(
-  //     main.address
-  //   );
-  //   console.log(
-  //     "mainPoolBalanceEnd in sol: ",
-  //     balanceEndMain / LAMPORTS_PER_SOL
-  //   );
-  //   console.log(
-  //     "OldAdmin balanceEnd in sol: ",
-  //     balanceEndAdmin / LAMPORTS_PER_SOL
-  //   );
+    let balanceEndMain: number = await provider.connection.getBalance(
+      main.address
+    );
+    console.log(
+      "mainPoolBalanceEnd in sol: ",
+      balanceEndMain / LAMPORTS_PER_SOL
+    );
+    console.log(
+      "OldAdmin balanceEnd in sol: ",
+      balanceEndAdmin / LAMPORTS_PER_SOL
+    );
 
-  //   // assert.equal(balanceEndMain, 0);
-  //   assert.isTrue(balanceStartAdmin == balanceEndAdmin);
-  // });
-  // it("New superadmin withdraws SOL", async () => {
-  //   let mainPoolBalance: number = await provider.connection.getBalance(
-  //     main.address
-  //   );
-  //   console.log("mainPoolBalance in sol: ", mainPoolBalance / LAMPORTS_PER_SOL);
-  //   let balanceStartAdmin: number = await provider.connection.getBalance(
-  //     superAdmin2.publicKey
-  //   );
-  //   console.log(
-  //     "balanceStartAdmin in sol: ",
-  //     balanceStartAdmin / LAMPORTS_PER_SOL
-  //   );
-  //   try {
-  //     const tx2 = await stakingProgram.methods
-  //       .withdrawMain()
-  //       .accounts({
-  //         superAdmin: superAdmin2.publicKey,
-  //         mainPool: main.address,
-  //       })
-  //       .signers([superAdmin2])
-  //       .rpc();
-  //   } catch (e) {
-  //     console.log(e);
-  //   }
-  //   let balanceEndAdmin: number = await provider.connection.getBalance(
-  //     superAdmin2.publicKey
-  //   );
+    // assert.equal(balanceEndMain, 0);
+    assert.isTrue(balanceStartAdmin == balanceEndAdmin);
+  });
+  it("New superadmin withdraws SOL", async () => {
+    let mainPoolBalance: number = await provider.connection.getBalance(
+      main.address
+    );
+    console.log("mainPoolBalance in sol: ", mainPoolBalance / LAMPORTS_PER_SOL);
+    let balanceStartAdmin: number = await provider.connection.getBalance(
+      superAdmin2.publicKey
+    );
+    console.log(
+      "balanceStartAdmin in sol: ",
+      balanceStartAdmin / LAMPORTS_PER_SOL
+    );
+    try {
+      const tx2 = await stakingProgram.methods
+        .withdrawMain()
+        .accounts({
+          superAdmin: superAdmin2.publicKey,
+          mainPool: main.address,
+        })
+        .signers([superAdmin2])
+        .rpc();
+    } catch (e) {
+      console.log(e);
+    }
+    let balanceEndAdmin: number = await provider.connection.getBalance(
+      superAdmin2.publicKey
+    );
 
-  //   let balanceEndMain: number = await provider.connection.getBalance(
-  //     main.address
-  //   );
-  //   console.log("mainPoolBalance in sol: ", balanceEndMain / LAMPORTS_PER_SOL);
-  //   console.log("balanceEndAdmin in sol: ", balanceEndAdmin / LAMPORTS_PER_SOL);
+    let balanceEndMain: number = await provider.connection.getBalance(
+      main.address
+    );
+    console.log("mainPoolBalance in sol: ", balanceEndMain / LAMPORTS_PER_SOL);
+    console.log("balanceEndAdmin in sol: ", balanceEndAdmin / LAMPORTS_PER_SOL);
 
-  //   // assert.equal(balanceEndMain, 0);
-  //   assert.isTrue(balanceStartAdmin < balanceEndAdmin);
-  // });
+    // assert.equal(balanceEndMain, 0);
+    assert.isTrue(balanceStartAdmin < balanceEndAdmin);
+  });
 });
