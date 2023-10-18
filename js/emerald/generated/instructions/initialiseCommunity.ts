@@ -72,7 +72,7 @@ export const initialiseCommunityInstructionDiscriminator = [
 export function createInitialiseCommunityInstruction(
   accounts: InitialiseCommunityInstructionAccounts,
   args: InitialiseCommunityInstructionArgs,
-  programId = new web3.PublicKey('2HLsq8QGhRnUUwuukCKLNdpvNc4utW6AQVV1VoY9jgEd')
+  programId = new web3.PublicKey('5Kmi2sHYKD76GySjL9Tkoi64eLwGpiZCW7zUpbpJ8B5m')
 ) {
   const [data] = initialiseCommunityStruct.serialize({
     instructionDiscriminator: initialiseCommunityInstructionDiscriminator,

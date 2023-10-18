@@ -98,7 +98,7 @@ export const stakeNftInstructionDiscriminator = [
 export function createStakeNftInstruction(
   accounts: StakeNftInstructionAccounts,
   args: StakeNftInstructionArgs,
-  programId = new web3.PublicKey('2HLsq8QGhRnUUwuukCKLNdpvNc4utW6AQVV1VoY9jgEd')
+  programId = new web3.PublicKey('5Kmi2sHYKD76GySjL9Tkoi64eLwGpiZCW7zUpbpJ8B5m')
 ) {
   const [data] = stakeNftStruct.serialize({
     instructionDiscriminator: stakeNftInstructionDiscriminator,

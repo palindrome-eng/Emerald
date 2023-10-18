@@ -100,7 +100,7 @@ export class CollectionPolicy implements CollectionPolicyArgs {
    */
   static gpaBuilder(
     programId: web3.PublicKey = new web3.PublicKey(
-      '2HLsq8QGhRnUUwuukCKLNdpvNc4utW6AQVV1VoY9jgEd'
+      '5Kmi2sHYKD76GySjL9Tkoi64eLwGpiZCW7zUpbpJ8B5m'
     )
   ) {
     return beetSolana.GpaBuilder.fromStruct(programId, collectionPolicyBeet)
