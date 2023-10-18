@@ -9,8 +9,7 @@ use crate::errors::*;
 
 pub fn stake_nft<'a, 'b, 'c, 'info>(
     ctx: Context<'a, 'b, 'c, 'info, StakeNftToPool<'info>>,
-    community_idx: u32,
-    collection_idx: u32
+    community_idx: u32
 ) -> Result<()> {
     let collection: &mut Account<'_, Collection> = &mut ctx.accounts.collection;
     let collection_policy: &mut Account<'_, CollectionPolicy> = &mut ctx.accounts.collection_policy;
@@ -103,7 +102,7 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
 
     // Increment staked NFTs per community and per collection
     community_pool.total_staked_count += 1;
-    if collection_idx != 0 {
+    if community_idx != 0 {
         collection.total_staked += 1;
     }
 
