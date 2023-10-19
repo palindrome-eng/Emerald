@@ -10,7 +10,7 @@ pub fn claim_delegate<'a, 'b, 'c, 'info>(
     ctx: Context<'a, 'b, 'c, 'info, ClaimDelegate<'info>>,
     community_idx: u32
 ) -> Result<()> {
-    let delegate: &Signer = &mut ctx.accounts.delegate;
+    let delegate: &Signer = &mut ctx.accounts.delegate_caller;
     let nft_ticket: &mut Account<'_, NftTicket> = &mut ctx.accounts.nft_ticket;
     let user_community_account: &mut Box<
         Account<'_, UserCommunityAccount>
@@ -132,14 +132,14 @@ pub fn claim_delegate<'a, 'b, 'c, 'info>(
 )]
 pub struct ClaimDelegate<'info> {
     #[account(mut)]
-    pub delegate: Signer<'info>,
+    pub delegate_caller: Signer<'info>,
 
     #[account(mut, seeds = [MAIN_SEED.as_ref()], bump)]
     pub main_pool: Account<'info, MainPool>,
 
     #[account(
         mut,
-        seeds = [USER_ACCOUNT_SEED.as_bytes(),&owner.key().as_ref(),  &main_pool.key().as_ref()],
+        seeds = [USER_ACCOUNT_SEED.as_bytes(),&owner.as_ref(),  &main_pool.key().as_ref()],
         bump
     )]
     pub user_account: Box<Account<'info, UserAccount>>,
@@ -160,7 +160,7 @@ pub struct ClaimDelegate<'info> {
     #[account(
         seeds = [DELEGATE_SEED.as_bytes(), &user_account.key().as_ref()],
         bump,
-        constraint = delegate_pda.delegate == delegate.key()
+        constraint = delegate_pda.delegate == delegate_caller.key()
     )]
     pub delegate_pda: Account<'info, Delegate>,
 

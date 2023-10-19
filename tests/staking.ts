@@ -914,7 +914,7 @@ describe("Emerald staking", async () => {
             )
             .accounts({
               mainPool: main.address,
-              delegate: delegate.delegatePublicKey,
+              delegateCaller: delegate.delegatePublicKey,
               delegatePda: delegate.address,
               userAccount: user.userMainAccount,
               communityPool: sNft.communityAddress,

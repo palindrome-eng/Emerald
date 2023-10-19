@@ -2,10 +2,14 @@ use anchor_lang::prelude::*;
 
 #[account]
 #[derive(Default)]
+/** Created when staked, and closed when unstaked. */
 pub struct NftTicket {
     pub mint: Pubkey, // 32
-    pub stake_time: i64, // Set once at the start
-    pub claimed_time: i64, // Each time it is claimed
+    /** Set once at the start. */
+    pub stake_time: i64,
+    /** Last claim time, updated on each claim. */
+    pub claimed_time: i64,
+    /** Pointer to the policy this NFT is staked under. */
     pub policy: Pubkey,
 }
 

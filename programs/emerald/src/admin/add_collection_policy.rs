@@ -4,8 +4,6 @@ use crate::constants::*;
 use crate::errors::*;
 use crate::utils::*;
 
-// TODO make it time limited
-
 pub fn add_collection_policy(
     ctx: Context<AddCollectionPolicy>,
     rate: u64, // In base coin

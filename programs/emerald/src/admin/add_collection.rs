@@ -23,8 +23,6 @@ pub fn add_collection(
     //     StakingError::IncorrectCollectionAddresses
     // );
 
-    // TODO remove one of addresses
-
     // Take SOL fee for adding collection
     take_fee(
         &main_pool.to_account_info(),

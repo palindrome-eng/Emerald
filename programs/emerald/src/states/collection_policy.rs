@@ -5,6 +5,7 @@ use spl_math::precise_number::PreciseNumber;
 // Total size: 128
 #[account]
 #[derive(Default)]
+/** Details about a particular collection reward policy. */
 pub struct CollectionPolicy {
     /** Amount of tokens paid out per NFT in this collection per epoch. */
     pub rate: u64,
@@ -45,8 +46,8 @@ impl CollectionPolicy {
         time_now < self.time_capped
     }
 
+    // TODO dudd need to remove it
     pub fn update(&mut self, rate: u64, epoch: i64, minimum_stake_time: i64) {
-        // TODO assert it is not immutable
         self.rate = rate;
         self.epoch = epoch;
         self.minimum_stake_time = minimum_stake_time;

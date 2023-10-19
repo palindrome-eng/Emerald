@@ -6,6 +6,7 @@ use metaplex_token_metadata::state::Creator;
 // Total size: 128
 #[account]
 #[derive(Default)]
+/** Details about a particular collection. */
 pub struct Collection {
     pub master_collection_key: Pubkey,
     pub creators_key: Pubkey,

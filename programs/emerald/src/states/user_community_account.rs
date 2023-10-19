@@ -2,9 +2,10 @@ use anchor_lang::prelude::*;
 
 #[account]
 #[derive(Default)]
+/** User account for a particular community. */
 pub struct UserCommunityAccount {
     pub community_address: Pubkey,
-    pub accumulated_reward: u64, // For gainz reference
-    pub stake_counter: u32, // For deriving subsequent PDAs
-    pub loan_counter: u32, // For deriving subsequent PDAs
+    pub accumulated_reward: u64,
+    pub stake_counter: u32,
+    pub loan_counter: u32,
 }

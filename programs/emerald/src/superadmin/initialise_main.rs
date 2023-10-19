@@ -29,7 +29,6 @@ pub struct InitialiseMain<'info> {
     pub super_admin: Signer<'info>,
     #[account(
         seeds = [MAIN_SEED.as_ref()],
-        // init_if_needed,
         init,
         bump,
         space = 8 + 100, // TODO: Change sizes
