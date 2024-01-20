@@ -22,6 +22,8 @@ pub fn claim_delegate<'a, 'b, 'c, 'info>(
 
     let time_now: i64 = Clock::get().unwrap().unix_timestamp;
 
+    require!(reward_vault.amount > 0, StakingError::ReservesDrained);
+
     take_fee(
         &main_pool.to_account_info(),
         &delegate,

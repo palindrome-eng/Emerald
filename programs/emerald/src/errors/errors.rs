@@ -85,4 +85,7 @@ pub enum StakingError {
 
     #[msg("Incorrect decimals. Exceeds 18")]
     IncorrectSPLDecimals,
+
+    #[msg("No point claiming if there is nothing left")]
+    ReservesDrained,
 }
