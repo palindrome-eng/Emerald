@@ -59,22 +59,16 @@ impl Collection {
         // Metadata account supplied the individual NFT matches one derivced from it
         require!(metadata == mint_metadata.key(), StakingError::InvalidMetadata);
 
-        // Creator is in the metadta
-        let mut present_creator: bool = false;
-        let mut verified_creator: bool = false;
-        for creator in creators {
-            // msg!("creator {:?} is {:?}", creator.address, creator.verified);
-            if creator.address == self.creators_key {
-                present_creator = true;
-            }
-            if creator.verified {
-                verified_creator = true;
-            }
-        }
-
-        require!(present_creator, StakingError::UnexpectedCreator);
         if self.verified_creator {
-            require!(verified_creator, StakingError::UnverifiedCreator);
+            let verified_creator = creators
+            .iter()
+            .position(|r| r.verified)
+            .unwrap();
+
+            require!(
+                creators[verified_creator].address == self.creators_key,
+                StakingError::UnexpectedCreator
+            );
         }
 
         Ok(())
