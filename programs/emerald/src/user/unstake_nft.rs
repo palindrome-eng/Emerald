@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{ self, Token, TokenAccount, Transfer };
-use mpl_token_metadata::instruction::thaw_delegated_account;
+use mpl_token_metadata::instruction::{ thaw_delegated_account, approve_use_authority };
 use solana_program::program::invoke_signed;
 
 use crate::states::*;
@@ -25,6 +25,7 @@ pub fn unstake_nft<'a, 'b, 'c, 'info>(
     > = &mut ctx.accounts.user_community_account;
     let nft_mint = &mut ctx.accounts.nft_mint;
     let reward_vault: &mut Box<Account<'_, TokenAccount>> = &mut ctx.accounts.reward_vault;
+    let token_record: &mut Option<AccountInfo<'_>> = &mut ctx.accounts.token_record;
 
     // Check NFT details against collection PDA
     collection.collection_member(mint_metadata, master_mint_metadata, &nft_mint.key())?;
@@ -67,22 +68,65 @@ pub fn unstake_nft<'a, 'b, 'c, 'info>(
     let metadata_program: &AccountInfo<'_> = &ctx.accounts.token_metadata_program;
     let edition_info: &AccountInfo<'_> = &ctx.accounts.edition_id;
 
-    invoke_signed(
-        &thaw_delegated_account(
-            *metadata_program.key,
-            community_pool.key(),
-            ctx.accounts.user_nft_token_account.key(),
-            *edition_info.key,
-            ctx.accounts.nft_mint.key()
-        ),
-        &[
-            community_pool.to_account_info().clone(),
-            ctx.accounts.user_nft_token_account.to_account_info(),
-            edition_info.to_account_info(),
-            ctx.accounts.nft_mint.to_account_info(),
-        ],
-        &[seeds]
-    )?;
+    // Deal with possible states of optional account using match
+    match token_record {
+        Some(token_record) => {
+            //   0. `[writable]` Use Authority Record PDA
+            //   1. `[writable]` Owned Token Account Of Mint
+            //   2. `[signer]` Owner
+            //   3. `[signer]` Payer
+            //   4. `[]` A Use Authority
+            //   5. `[]` Metadata account
+            //   6. `[]` Mint of Metadata
+            //   7. `[]` Program As Signer (Burner)
+            //   8. `[]` Token program
+            //   9. `[]` System program
+            //   10. Optional `[]` Rent info
+            // If the token record account has been provided exists, approve the use authority
+            invoke_signed(
+                &approve_use_authority(
+                    *metadata_program.key,
+                    *token_record.key,
+                    *ctx.accounts.user.to_account_info().key,
+                    *ctx.accounts.user.to_account_info().key,
+                    *ctx.accounts.user.key,
+                    ctx.accounts.user_nft_token_account.key(),
+                    *ctx.accounts.user.key,
+                    *mint_metadata.to_account_info().key,
+                    *ctx.accounts.user.key, // Wrong
+                    0 // Wrong
+                ),
+
+                // These are defo wrong
+                &[
+                    token_record.clone(),
+                    ctx.accounts.user.to_account_info().clone(),
+                    nft_mint.clone(),
+                    ctx.accounts.user_nft_token_account.to_account_info(),
+                    metadata_program.clone(),
+                ],
+                &[seeds]
+            )?;
+        }
+        None => {
+            invoke_signed(
+                &thaw_delegated_account(
+                    *metadata_program.key,
+                    community_pool.key(),
+                    ctx.accounts.user_nft_token_account.key(),
+                    *edition_info.key,
+                    ctx.accounts.nft_mint.key()
+                ),
+                &[
+                    community_pool.to_account_info().clone(),
+                    ctx.accounts.user_nft_token_account.to_account_info(),
+                    edition_info.to_account_info(),
+                    ctx.accounts.nft_mint.to_account_info(),
+                ],
+                &[seeds]
+            )?;
+        }
+    }
 
     take_fee(
         &main_pool.to_account_info(),
@@ -284,6 +328,9 @@ pub struct UnstakeNftToPool<'info> {
         constraint = mint_metadata.owner == &metaplex_token_metadata::ID
     )]
     pub master_mint_metadata: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub token_record: Option<AccountInfo<'info>>,
 
     #[account(
         mut,

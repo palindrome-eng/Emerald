@@ -1,6 +1,15 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{ self, Approve, Token, TokenAccount };
-use mpl_token_metadata::instruction::freeze_delegated_account;
+use mpl_token_metadata::instruction::{
+    freeze_delegated_account,
+    revoke_use_authority,
+    Burn,
+    Revoke,
+    Update,
+    RevokeArgs,
+    UpdateArgs,
+};
+
 use solana_program::program::invoke_signed;
 
 use crate::states::*;
@@ -25,6 +34,7 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
     let nft_mint: &mut AccountInfo<'_> = &mut ctx.accounts.nft_mint;
     let metadata_program: &AccountInfo<'_> = &ctx.accounts.token_metadata_program;
     let edition_info: &AccountInfo<'_> = &ctx.accounts.edition_id;
+    let token_record: &mut Option<AccountInfo<'_>> = &mut ctx.accounts.token_record;
 
     // Check NFT details against provided collection PDA
     collection.collection_member(mint_metadata, master_mint_metadata, &nft_mint.key())?;
@@ -67,23 +77,62 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
     msg!("currentNftBalance {:?} owned by {:?}", current_nft_balance, sub_owner);
     msg!("user calling {:?}", ctx.accounts.user.key());
 
-    // Freeze delegated account
-    invoke_signed(
-        &freeze_delegated_account(
-            *metadata_program.key,
-            community_pool.key(),
-            ctx.accounts.user_nft_token_account.key(),
-            *edition_info.key,
-            nft_mint.key()
-        ),
-        &[
-            community_pool.to_account_info().clone(),
-            ctx.accounts.user_nft_token_account.to_account_info(),
-            edition_info.to_account_info(),
-            nft_mint.to_account_info(),
-        ],
-        &[seeds]
-    )?;
+    // Deal with possible states of optional account using match
+    match token_record {
+        Some(token_record) => {
+            // Need to transfer delegate auth to main PDA
+
+            // [writable] Use Authority Record PDA
+            // [writable] Owned Token Account Of Mint
+            // [signer] Owner
+            // [signer] Payer
+            // [] A Use Authority
+            // [] Metadata account
+            // [] Mint of Metadata
+
+            // Revoke the token transfer ability for the owner
+            invoke_signed(
+                &revoke_use_authority(
+                    *metadata_program.key,
+                    ctx.accounts.user_nft_token_account.key(), // NEEDS TO BE REPLACED WITH RECORD PDA
+                    *ctx.accounts.user.to_account_info().key, // User is the owner
+                    *ctx.accounts.user.to_account_info().key,
+                    ctx.accounts.user_nft_token_account.key(), // Token account of the mint of the owner
+                    *mint_metadata.to_account_info().key,
+                    nft_mint.key()
+                ),
+                &[
+                    ctx.accounts.user_nft_token_account.to_account_info().clone(),
+                    edition_info.to_account_info().clone(),
+                    nft_mint.to_account_info().clone(),
+                    token_record.to_account_info().clone(),
+                    ctx.accounts.token_program.to_account_info().clone(),
+                    ctx.accounts.user.to_account_info().clone(),
+                ],
+                &[seeds]
+            )?;
+        }
+        None => {
+            // Its not the pNFT try old way
+            // Freeze delegated account
+            invoke_signed(
+                &freeze_delegated_account(
+                    *metadata_program.key,
+                    community_pool.key(),
+                    ctx.accounts.user_nft_token_account.key(),
+                    *edition_info.key,
+                    nft_mint.key()
+                ),
+                &[
+                    community_pool.to_account_info().clone(),
+                    ctx.accounts.user_nft_token_account.to_account_info(),
+                    edition_info.to_account_info(),
+                    nft_mint.to_account_info(),
+                ],
+                &[seeds]
+            )?;
+        }
+    }
 
     // Set stake time and payout rate
     msg!("Settign NFT details ");
@@ -143,6 +192,9 @@ pub struct StakeNftToPool<'info> {
         bump
     )]
     pub collection_policy: Box<Account<'info, CollectionPolicy>>,
+
+    #[account(mut)]
+    pub token_record: Option<AccountInfo<'info>>,
 
     #[account(
         mut,
