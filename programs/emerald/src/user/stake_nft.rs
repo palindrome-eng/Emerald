@@ -3,12 +3,12 @@ use anchor_spl::token::{ self, Approve, Token, TokenAccount };
 use mpl_token_metadata::instruction::{
     freeze_delegated_account,
     revoke_use_authority,
-    Burn,
-    Revoke,
-    Update,
-    RevokeArgs,
-    UpdateArgs,
+    DelegateArgs,
+    LockArgs,
 };
+
+use mpl_token_metadata::instruction::builders::{ Delegate, Lock };
+use mpl_token_metadata::instruction::InstructionBuilder;
 
 use solana_program::program::invoke_signed;
 
@@ -20,32 +20,22 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
     ctx: Context<'a, 'b, 'c, 'info, StakeNftToPool<'info>>,
     community_idx: u32
 ) -> Result<()> {
-    let collection: &mut Account<'_, Collection> = &mut ctx.accounts.collection;
-    let collection_policy: &mut Account<'_, CollectionPolicy> = &mut ctx.accounts.collection_policy;
-    let mint_metadata: &mut &AccountInfo<'_> = &mut &ctx.accounts.mint_metadata;
-    let master_mint_metadata: &mut &AccountInfo<'_> = &mut &ctx.accounts.master_mint_metadata;
-    let community_pool: &mut Box<Account<'_, CommunityPool>> = &mut ctx.accounts.community_pool;
-    let main_pool: &mut Account<'_, MainPool> = &mut ctx.accounts.main_pool;
-    let nft_ticket: &mut Box<Account<'_, NftTicket>> = &mut ctx.accounts.nft_ticket;
-    let user_account: &mut Box<Account<'_, UserAccount>> = &mut ctx.accounts.user_account;
-    let user_community_account: &mut Box<
-        Account<'_, UserCommunityAccount>
-    > = &mut ctx.accounts.user_community_account;
-    let nft_mint: &mut AccountInfo<'_> = &mut ctx.accounts.nft_mint;
-    let metadata_program: &AccountInfo<'_> = &ctx.accounts.token_metadata_program;
-    let edition_info: &AccountInfo<'_> = &ctx.accounts.edition_id;
-    let token_record: &mut Option<AccountInfo<'_>> = &mut ctx.accounts.token_record;
+    let accounts: &mut StakeNftToPool = ctx.accounts;
 
     // Check NFT details against provided collection PDA
-    collection.collection_member(mint_metadata, master_mint_metadata, &nft_mint.key())?;
+    accounts.collection.collection_member(
+        &&accounts.mint_metadata,
+        &&accounts.master_mint_metadata,
+        &accounts.nft_mint.key()
+    )?;
 
     // Delegate as owner authority to the community pool PDA
     let cpi_accounts: Approve<'_> = Approve {
-        to: ctx.accounts.user_nft_token_account.to_account_info(),
-        delegate: community_pool.to_account_info(),
-        authority: ctx.accounts.user.to_account_info(),
+        to: accounts.user_nft_token_account.to_account_info(),
+        delegate: accounts.community_pool.to_account_info(),
+        authority: accounts.user.to_account_info(),
     };
-    let cpi_program: AccountInfo<'_> = ctx.accounts.token_program.to_account_info();
+    let cpi_program: AccountInfo<'_> = accounts.token_program.to_account_info();
     let cpi_context: CpiContext<'_, '_, '_, '_, Approve<'_>> = CpiContext::new(
         cpi_program,
         cpi_accounts
@@ -54,11 +44,15 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
 
     // Recalculate bump for signing
     let (_, rederived_bump) = anchor_lang::prelude::Pubkey::find_program_address(
-        &[COMMUNITY_SEED.as_bytes(), main_pool.key().as_ref(), &community_idx.to_be_bytes()],
+        &[
+            COMMUNITY_SEED.as_bytes(),
+            accounts.main_pool.key().as_ref(),
+            &community_idx.to_be_bytes(),
+        ],
         &ctx.program_id
     );
 
-    let main_pool_key: Pubkey = main_pool.key();
+    let main_pool_key: Pubkey = accounts.main_pool.key();
 
     // Seeds for freezing
     let seeds = &[
@@ -68,66 +62,38 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
         &[rederived_bump],
     ];
 
-    msg!("edition_info.key(): {:?}", edition_info.key());
-
     // Get users NFT amount
-    let current_nft_balance = ctx.accounts.user_nft_token_account.amount as f64;
-    let sub_owner = ctx.accounts.user_nft_token_account.owner;
+    let current_nft_balance = accounts.user_nft_token_account.amount as f64;
+    let sub_owner = accounts.user_nft_token_account.owner;
 
     msg!("currentNftBalance {:?} owned by {:?}", current_nft_balance, sub_owner);
-    msg!("user calling {:?}", ctx.accounts.user.key());
+    msg!("user calling {:?}", accounts.user.key());
 
     // Deal with possible states of optional account using match
-    match token_record {
+    match &accounts.token_record {
         Some(token_record) => {
-            // Need to transfer delegate auth to main PDA
+            // Delegate auth to this program
+            accounts.delegate_pnft(community_idx, rederived_bump)?;
 
-            // [writable] Use Authority Record PDA
-            // [writable] Owned Token Account Of Mint
-            // [signer] Owner
-            // [signer] Payer
-            // [] A Use Authority
-            // [] Metadata account
-            // [] Mint of Metadata
-
-            // Revoke the token transfer ability for the owner
-            invoke_signed(
-                &revoke_use_authority(
-                    *metadata_program.key,
-                    ctx.accounts.user_nft_token_account.key(), // NEEDS TO BE REPLACED WITH RECORD PDA
-                    *ctx.accounts.user.to_account_info().key, // User is the owner
-                    *ctx.accounts.user.to_account_info().key,
-                    ctx.accounts.user_nft_token_account.key(), // Token account of the mint of the owner
-                    *mint_metadata.to_account_info().key,
-                    nft_mint.key()
-                ),
-                &[
-                    ctx.accounts.user_nft_token_account.to_account_info().clone(),
-                    edition_info.to_account_info().clone(),
-                    nft_mint.to_account_info().clone(),
-                    token_record.to_account_info().clone(),
-                    ctx.accounts.token_program.to_account_info().clone(),
-                    ctx.accounts.user.to_account_info().clone(),
-                ],
-                &[seeds]
-            )?;
+            // Lock user
+            accounts.lock_user(community_idx, rederived_bump)?;
         }
         None => {
             // Its not the pNFT try old way
             // Freeze delegated account
             invoke_signed(
                 &freeze_delegated_account(
-                    *metadata_program.key,
-                    community_pool.key(),
-                    ctx.accounts.user_nft_token_account.key(),
-                    *edition_info.key,
-                    nft_mint.key()
+                    *accounts.token_metadata_program.key,
+                    accounts.community_pool.key(),
+                    accounts.user_nft_token_account.key(),
+                    *accounts.edition_id.key,
+                    accounts.nft_mint.key()
                 ),
                 &[
-                    community_pool.to_account_info().clone(),
-                    ctx.accounts.user_nft_token_account.to_account_info(),
-                    edition_info.to_account_info(),
-                    nft_mint.to_account_info(),
+                    accounts.community_pool.to_account_info().clone(),
+                    accounts.user_nft_token_account.to_account_info(),
+                    accounts.edition_id.to_account_info(),
+                    accounts.nft_mint.to_account_info(),
                 ],
                 &[seeds]
             )?;
@@ -136,31 +102,152 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
 
     // Set stake time and payout rate
     msg!("Settign NFT details ");
-    nft_ticket.stake_time = Clock::get().unwrap().unix_timestamp;
+    accounts.nft_ticket.stake_time = Clock::get().unwrap().unix_timestamp;
     require!(
-        collection_policy.within_time_cap(nft_ticket.stake_time),
+        accounts.collection_policy.within_time_cap(accounts.nft_ticket.stake_time),
         StakingError::TimeCapExceeded
     );
 
     // So that the first clai is not from the 1970s
-    nft_ticket.claimed_time = nft_ticket.stake_time;
-    nft_ticket.mint = nft_mint.key();
+    accounts.nft_ticket.claimed_time = accounts.nft_ticket.stake_time;
+    accounts.nft_ticket.mint = accounts.nft_mint.key();
 
     // Set address of the policy
-    nft_ticket.policy = collection_policy.key();
+    accounts.nft_ticket.policy = accounts.collection_policy.key();
 
     // Increment staked NFTs per community and per collection
-    community_pool.total_staked_count += 1;
+    accounts.community_pool.total_staked_count += 1;
     if community_idx != 0 {
-        collection.total_staked += 1;
+        accounts.collection.total_staked += 1;
     }
 
-    msg!("collection.total_staked: in stake : {:?}", collection.total_staked);
+    msg!("collection.total_staked: in stake : {:?}", accounts.collection.total_staked);
     // Increment user active stakings counters
-    user_community_account.stake_counter += 1;
-    user_account.total_staked += 1;
+    accounts.user_community_account.stake_counter += 1;
+    accounts.user_account.total_staked += 1;
 
     Ok(())
+}
+
+impl<'info> StakeNftToPool<'info> {
+    fn delegate_pnft(
+        &self,
+        community_idx: u32,
+        rederived_bump: u8
+    ) -> anchor_lang::prelude::Result<()> {
+        let delegate_args = DelegateArgs::LockedTransferV1 {
+            amount: 1,
+            locked_address: *self.mint_metadata.to_account_info().key,
+            authorization_data: None,
+        };
+
+        let delegate_instruction: Delegate = Delegate {
+            delegate_record: Some(self.token_record.clone().unwrap().key()), // Assuming you want to use token_record's pubkey
+
+            // Delegate will need to be some PDA of this program
+            delegate: self.token_record.clone().unwrap().key(),
+            metadata: self.mint_metadata.key(), // Assuming 'metadata' is associated with mint_metadata
+            master_edition: None, // Assuming there is no master edition in this context
+            token_record: Some(self.token_record.clone().unwrap().key()), // Optional, using token_record's pubkey
+            mint: self.nft_mint.key(), // Using the nft_mint pubkey
+            token: None, // If there is a specific token to be delegated, provide its account key
+            authority: self.user.key(), // Using user's pubkey as authority
+            payer: self.user.key(), // Using user's pubkey as payer
+            system_program: self.system_program.key(), // System program pubkey
+            sysvar_instructions: self.rent.key(), // Rent sysvar instructions pubkey
+            spl_token_program: Some(self.token_program.key()), // SPL Token Program pubkey, optional
+            authorization_rules_program: None, // If applicable, provide the account info
+            authorization_rules: None, // If applicable, provide the account info
+            args: delegate_args, // From above
+        };
+
+        let ix = delegate_instruction.instruction();
+
+        // Below instructiosn must match the accounts in the Delegate instruction struct order
+        invoke_signed(
+            &ix, // Use the instruction created from the Delegate struct
+            &[
+                self.token_record.clone().unwrap().to_account_info(), // delegate_record (also used as delegate)
+                self.user.to_account_info(), // authority (also used as payer)
+                self.mint_metadata.to_account_info(), // metadata
+                // None,
+                self.token_record.clone().unwrap().to_account_info(), // token_record
+                self.nft_mint.to_account_info(), // mint
+                // No account for token as it's None
+                self.system_program.to_account_info(), // system_program
+                self.rent.to_account_info(), // sysvar_instructions
+                self.token_program.to_account_info(), // spl_token_program
+                // No accounts for authorization_rules_program and authorization_rules as they are None
+            ],
+            &[
+                &[
+                    COMMUNITY_SEED.as_bytes(),
+                    self.main_pool.key().as_ref(),
+                    &community_idx.to_be_bytes(),
+                    &[rederived_bump],
+                ],
+            ] // Pass the seeds for the signed transaction
+        )?;
+
+        Ok(())
+    }
+
+    fn lock_user(
+        &self,
+        community_idx: u32,
+        rederived_bump: u8
+    ) -> anchor_lang::prelude::Result<()> {
+        // Spawn lock args
+        let lock_args = LockArgs::V1 { authorization_data: None };
+
+        // Create lock instructions
+        let lock_instruction: Lock = Lock {
+            metadata: self.mint_metadata.key(), // Assuming 'metadata' is associated with mint_metadata
+            token_record: Some(self.token_record.clone().unwrap().key()), // Optional, using token_record's pubkey
+            token_owner: Some(self.user.key()), // Using user's pubkey as token_owner
+            edition: Some(self.edition_id.key()), // Assuming there is an edition_id in this context
+            mint: self.nft_mint.key(), // Using the nft_mint pubkey
+
+            // This is the token account
+            token: self.user_nft_token_account.key(),
+            authority: self.user.key(), // Using user's pubkey as authority
+            payer: self.user.key(), // Using user's pubkey as payer
+            system_program: self.system_program.key(), // System program pubkey
+            sysvar_instructions: self.rent.key(), // Rent sysvar instructions pubkey
+            spl_token_program: Some(self.token_program.key()), // SPL Token Program pubkey, optional
+            authorization_rules_program: None, // If applicable, provide the account info
+            authorization_rules: None, // If applicable, provide the account info
+            args: lock_args,
+        };
+
+        // Invoke signed
+        invoke_signed(
+            &lock_instruction.instruction(), // Use the instruction created from the Lock struct
+            &[
+                self.mint_metadata.to_account_info(), // metadata
+                self.token_record.clone().unwrap().to_account_info(), // token_record
+                self.user.to_account_info(), // token_owner
+                self.edition_id.to_account_info(), // edition
+                self.nft_mint.to_account_info(), // mint
+                self.user_nft_token_account.to_account_info(), // token
+                self.user.to_account_info(), // authority (also used as payer)
+                self.system_program.to_account_info(), // system_program
+                self.rent.to_account_info(), // sysvar_instructions
+                self.token_program.to_account_info(), // spl_token_program
+                // No accounts for authorization_rules_program and authorization_rules as they are None
+            ],
+            &[
+                &[
+                    COMMUNITY_SEED.as_bytes(),
+                    self.main_pool.key().as_ref(),
+                    &community_idx.to_be_bytes(),
+                    &[rederived_bump],
+                ],
+            ] // Pass the seeds for the signed transaction
+        )?;
+
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]

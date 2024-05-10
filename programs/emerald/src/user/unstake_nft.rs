@@ -1,12 +1,20 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{ self, Token, TokenAccount, Transfer };
-use mpl_token_metadata::instruction::{ thaw_delegated_account, approve_use_authority };
+use mpl_token_metadata::instruction::{
+    thaw_delegated_account,
+    approve_use_authority,
+    RevokeArgs,
+    UnlockArgs,
+};
 use solana_program::program::invoke_signed;
 
 use crate::states::*;
 use crate::constants::*;
 use crate::errors::*;
 use crate::utils::*;
+
+use mpl_token_metadata::instruction::builders::{ Revoke, Unlock };
+use mpl_token_metadata::instruction::InstructionBuilder;
 
 pub fn unstake_nft<'a, 'b, 'c, 'info>(
     ctx: Context<'a, 'b, 'c, 'info, UnstakeNftToPool<'info>>,
@@ -71,39 +79,45 @@ pub fn unstake_nft<'a, 'b, 'c, 'info>(
     // Deal with possible states of optional account using match
     match token_record {
         Some(token_record) => {
-            //   0. `[writable]` Use Authority Record PDA
-            //   1. `[writable]` Owned Token Account Of Mint
-            //   2. `[signer]` Owner
-            //   3. `[signer]` Payer
-            //   4. `[]` A Use Authority
-            //   5. `[]` Metadata account
-            //   6. `[]` Mint of Metadata
-            //   7. `[]` Program As Signer (Burner)
-            //   8. `[]` Token program
-            //   9. `[]` System program
-            //   10. Optional `[]` Rent info
-            // If the token record account has been provided exists, approve the use authority
-            invoke_signed(
-                &approve_use_authority(
-                    *metadata_program.key,
-                    *token_record.key,
-                    *ctx.accounts.user.to_account_info().key,
-                    *ctx.accounts.user.to_account_info().key,
-                    *ctx.accounts.user.key,
-                    ctx.accounts.user_nft_token_account.key(),
-                    *ctx.accounts.user.key,
-                    *mint_metadata.to_account_info().key,
-                    *ctx.accounts.user.key, // Wrong
-                    0 // Wrong
-                ),
+            // Create revoke args
+            let revoke_args = RevokeArgs::LockedTransferV1;
 
-                // These are defo wrong
+            // Create revoke instruction
+            let revoke: Revoke = Revoke {
+                // Delegate will need to be some PDA of this program
+                delegate: token_record.key(),
+                delegate_record: Some(token_record.key()),
+                token_record: Some(token_record.key()),
+                metadata: *metadata_program.key,
+                master_edition: Some(*edition_info.key),
+                mint: *nft_mint.key,
+                token: None,
+                authority: *ctx.accounts.user.key,
+                payer: *ctx.accounts.user.key,
+                system_program: *ctx.accounts.system_program.key,
+                authorization_rules: None,
+                authorization_rules_program: None,
+                sysvar_instructions: ctx.accounts.rent.key(),
+                spl_token_program: Some(ctx.accounts.token_program.key()),
+                args: revoke_args,
+            };
+
+            // Invoke signed
+            invoke_signed(
+                &revoke.instruction(),
                 &[
-                    token_record.clone(),
+                    token_record.to_account_info().clone(),
                     ctx.accounts.user.to_account_info().clone(),
-                    nft_mint.clone(),
-                    ctx.accounts.user_nft_token_account.to_account_info(),
-                    metadata_program.clone(),
+                    ctx.accounts.user.to_account_info().clone(),
+                    ctx.accounts.user.to_account_info().clone(),
+                    token_record.to_account_info().clone(),
+                    ctx.accounts.nft_mint.to_account_info().clone(),
+                    ctx.accounts.user.to_account_info().clone(),
+                    ctx.accounts.user.to_account_info().clone(),
+                    ctx.accounts.system_program.to_account_info().clone(),
+                    ctx.accounts.rent.to_account_info().clone(),
+                    ctx.accounts.token_program.to_account_info().clone(),
+                    ctx.accounts.token_metadata_program.to_account_info().clone(),
                 ],
                 &[seeds]
             )?;
