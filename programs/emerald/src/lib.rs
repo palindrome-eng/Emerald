@@ -14,7 +14,7 @@ pub use user::*;
 pub use states::*;
 pub use common::*;
 
-declare_id!("5Kmi2sHYKD76GySjL9Tkoi64eLwGpiZCW7zUpbpJ8B5m");
+declare_id!("CpTEQuYuqgx3fkbtVfLgkyem5GFWC2QCfo36mgYXnTgu");
 
 #[program]
 pub mod emerald {

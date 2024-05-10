@@ -343,9 +343,6 @@ pub struct UnstakeNftToPool<'info> {
     )]
     pub master_mint_metadata: AccountInfo<'info>,
 
-    #[account(mut)]
-    pub token_record: Option<AccountInfo<'info>>,
-
     #[account(
         mut,
         constraint = user_nft_token_account.mint == nft_mint.key(),
@@ -379,4 +376,7 @@ pub struct UnstakeNftToPool<'info> {
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
     pub token_program: Program<'info, Token>,
+
+    #[account(mut)]
+    pub token_record: Option<AccountInfo<'info>>,
 }

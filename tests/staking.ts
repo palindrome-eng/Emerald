@@ -679,6 +679,8 @@ describe("Emerald staking", async () => {
               mintMetadata: nft.metadata,
               tokenMetadataProgram: METAPLEX,
               editionId: nft.edition,
+              tokenRecord: null,
+              tokenProgram: TOKEN_PROGRAM_ID,
             })
             .signers([user.keypair])
             .rpc();
@@ -1027,6 +1029,10 @@ describe("Emerald staking", async () => {
               userRewardAccount: await community.getScAta(
                 user.keypair.publicKey
               ),
+
+              tokenProgram: TOKEN_PROGRAM_ID,
+
+              tokenRecord: null,
             })
             .signers([user.keypair])
             .rpc();

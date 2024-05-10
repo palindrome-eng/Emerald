@@ -135,11 +135,7 @@ impl<'info> StakeNftToPool<'info> {
         community_idx: u32,
         rederived_bump: u8
     ) -> anchor_lang::prelude::Result<()> {
-        let delegate_args = DelegateArgs::LockedTransferV1 {
-            amount: 1,
-            locked_address: *self.mint_metadata.to_account_info().key,
-            authorization_data: None,
-        };
+        let delegate_args = DelegateArgs::StakingV1 { amount: 1, authorization_data: None };
 
         let delegate_instruction: Delegate = Delegate {
             delegate_record: Some(self.token_record.clone().unwrap().key()), // Assuming you want to use token_record's pubkey
@@ -280,9 +276,6 @@ pub struct StakeNftToPool<'info> {
     )]
     pub collection_policy: Box<Account<'info, CollectionPolicy>>,
 
-    #[account(mut)]
-    pub token_record: Option<AccountInfo<'info>>,
-
     #[account(
         mut,
         seeds = [
@@ -363,4 +356,7 @@ pub struct StakeNftToPool<'info> {
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
     pub token_program: Program<'info, Token>,
+
+    #[account(mut)]
+    pub token_record: Option<AccountInfo<'info>>,
 }
