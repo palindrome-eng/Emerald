@@ -88,4 +88,13 @@ pub enum StakingError {
 
     #[msg("No point claiming if there is nothing left")]
     ReservesDrained,
+
+    #[msg("User not owner of this token account")]
+    NotOwner,
+
+    #[msg("Nothign in this account")]
+    TokenAccountEmpty,
+
+    #[msg("Token account not derived from this mint")]
+    MintTokenAccountMismatch,
 }

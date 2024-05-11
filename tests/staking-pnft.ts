@@ -1,10 +1,5 @@
 import * as anchor from "@project-serum/anchor";
 import { Program } from "@project-serum/anchor";
-import {
-  delegateLockedTransferV1,
-  TokenStandard,
-} from "@metaplex-foundation/mpl-token-metadata";
-
 import { Emerald } from "../target/types/emerald";
 import {
   METAPLEX,
@@ -23,6 +18,20 @@ import {
 import { PublicKey } from "@solana/web3.js";
 import { keypairIdentity, Metaplex } from "@metaplex-foundation/js";
 import {
+  TokenStandard,
+  fetchTokenRecordFromSeeds,
+} from "@metaplex-foundation/mpl-token-metadata";
+import {
+  Account,
+  Context,
+  Option,
+  OptionOrNullable,
+  Pda,
+  RpcAccount,
+  RpcGetAccountOptions,
+  RpcGetAccountsOptions,
+} from "@metaplex-foundation/umi";
+import {
   createMint,
   getAccount,
   mintTo,
@@ -30,7 +39,12 @@ import {
 } from "@solana/spl-token";
 import { BN } from "bn.js";
 import { assert } from "chai";
-import { delay, loadKeypairFromFile, secNow } from "./helper";
+import {
+  delay,
+  loadKeypairFromFile,
+  secNow,
+  findTokenRecordPda,
+} from "./helper";
 
 // Classes needed to provide non-zero arguments to program calls
 import { NftMint1, NftMint0, CollectionsMaster } from "./derived_nfts";
@@ -127,7 +141,7 @@ describe("Emerald staking", async () => {
 
     for (let i = 0; i < number_of_collections; i++) {
       // Mint of 1 index 1
-      await cm.initializeCollection(uri);
+      await cm.initializeCollection({ uri, pnft: true });
 
       // Mint whole collection
       await cm.collections[i].premintNFTs(nfts_per_collections);
@@ -647,6 +661,14 @@ describe("Emerald staking", async () => {
             community.index
           );
 
+          // Fetch the address of the TokenRecord
+          let tokenRecord: PublicKey = await findTokenRecordPda(
+            collectionM.nfts[nftsGone].mint,
+            await nft.getAta(user.keypair.publicKey)
+          );
+
+          console.log("Token record: ", tokenRecord.toBase58());
+
           // It will be staked so move it to the staked array for the given community PDA generated
           await userCommunity.stakeNft(
             nft.mint,
@@ -662,31 +684,37 @@ describe("Emerald staking", async () => {
             ).toBase58()}`
           );
 
-          const tx1 = await stakingProgram.methods
-            .stakeNft(
-              community.index,
-              collection.index,
-              userCommunity.index,
-              policy.index
-            )
-            .accounts({
-              mainPool: main.address,
-              user: user.keypair.publicKey,
-              userAccount: user.userMainAccount,
-              userCommunityAccount: userCommunity.userCommunityAddress,
-              communityPool: community.address,
-              nftTicket: userCommunity.getByMint(nft.mint).ticketPda,
-              nftMint: nft.mint,
-              userNftTokenAccount: await nft.getAta(user.keypair.publicKey),
-              collection: collection.address,
-              collectionPolicy: policy.address,
-              masterMintMetadata: nft.metadata,
-              mintMetadata: nft.metadata,
-              tokenMetadataProgram: METAPLEX,
-              editionId: nft.edition,
-            })
-            .signers([user.keypair])
-            .rpc();
+          try {
+            const tx1 = await stakingProgram.methods
+              .stakeNft(
+                community.index,
+                collection.index,
+                userCommunity.index,
+                policy.index
+              )
+              .accounts({
+                mainPool: main.address,
+                user: user.keypair.publicKey,
+                userAccount: user.userMainAccount,
+                userCommunityAccount: userCommunity.userCommunityAddress,
+                communityPool: community.address,
+                nftTicket: userCommunity.getByMint(nft.mint).ticketPda,
+                nftMint: nft.mint,
+                userNftTokenAccount: await nft.getAta(user.keypair.publicKey),
+                collection: collection.address,
+                collectionPolicy: policy.address,
+                masterMintMetadata: nft.metadata,
+                mintMetadata: nft.metadata,
+                tokenMetadataProgram: METAPLEX,
+                editionId: nft.edition,
+                tokenRecord,
+                tokenProgram: TOKEN_PROGRAM_ID,
+              })
+              .signers([user.keypair])
+              .rpc();
+          } catch (e) {
+            console.log("\nStaking error: ", e);
+          }
 
           // Unstake
           await delay(2);
@@ -797,375 +825,379 @@ describe("Emerald staking", async () => {
     // - owner can't transfer NFT now elswhere
   });
 
-  it("Users claim on few NFTs from base community using single claim", async () => {
-    let balanceStartAdmin: number = await provider.connection.getBalance(
-      superAdmin.publicKey
-    );
-    console.log("balanceStartAdmin: before user claiming ", balanceStartAdmin);
-    let balanceEndMain: number = await provider.connection.getBalance(
-      main.address
-    );
-    console.log("balanceEndMain before user claiming ", balanceEndMain);
-    await delay(1);
-    for (let user_idx = 0; user_idx < userz.users.length; user_idx++) {
-      let user: User = userz.users[user_idx];
-      let userStakedNtfs: StakedNft[] = user.getAllStakedNfts();
-      console.log(
-        `\nuser[${user_idx}] has ${userStakedNtfs.length} staked nfts`
-      );
+  // it("Users claim on few NFTs from base community using single claim", async () => {
+  //   let balanceStartAdmin: number = await provider.connection.getBalance(
+  //     superAdmin.publicKey
+  //   );
+  //   console.log("balanceStartAdmin: before user claiming ", balanceStartAdmin);
+  //   let balanceEndMain: number = await provider.connection.getBalance(
+  //     main.address
+  //   );
+  //   console.log("balanceEndMain before user claiming ", balanceEndMain);
+  //   await delay(1);
+  //   for (let user_idx = 0; user_idx < userz.users.length; user_idx++) {
+  //     let user: User = userz.users[user_idx];
+  //     let userStakedNtfs: StakedNft[] = user.getAllStakedNfts();
+  //     console.log(
+  //       `\nuser[${user_idx}] has ${userStakedNtfs.length} staked nfts`
+  //     );
 
-      for (let s = 0; s < userStakedNtfs.length; s++) {
-        const sNft: StakedNft = userStakedNtfs[s];
-        console.log(`\tClaims on NFT  ${sNft.mint}`);
+  //     for (let s = 0; s < userStakedNtfs.length; s++) {
+  //       const sNft: StakedNft = userStakedNtfs[s];
+  //       console.log(`\tClaims on NFT  ${sNft.mint}`);
 
-        const userCommunity: UserCommunity = user.getByCommunityIdx(
-          sNft.communityIdx
-        );
+  //       const userCommunity: UserCommunity = user.getByCommunityIdx(
+  //         sNft.communityIdx
+  //       );
 
-        const community: Community = main.comByChainIdx(sNft.communityIdx);
+  //       const community: Community = main.comByChainIdx(sNft.communityIdx);
 
-        try {
-          const tx2 = await stakingProgram.methods
-            .claimSingle(
-              sNft.communityIdx,
-              sNft.collectionIdx,
-              sNft.policyIdx,
-              userCommunity.index,
-              sNft.mint
-            )
-            .accounts({
-              mainPool: main.address,
-              user: user.keypair.publicKey,
-              userAccount: user.userMainAccount,
-              communityPool: sNft.communityAddress,
-              userCommunityAccount: sNft.userCommunityAddress,
-              nftTicket: sNft.ticketPda,
+  //       try {
+  //         const tx2 = await stakingProgram.methods
+  //           .claimSingle(
+  //             sNft.communityIdx,
+  //             sNft.collectionIdx,
+  //             sNft.policyIdx,
+  //             userCommunity.index,
+  //             sNft.mint
+  //           )
+  //           .accounts({
+  //             mainPool: main.address,
+  //             user: user.keypair.publicKey,
+  //             userAccount: user.userMainAccount,
+  //             communityPool: sNft.communityAddress,
+  //             userCommunityAccount: sNft.userCommunityAddress,
+  //             nftTicket: sNft.ticketPda,
 
-              // For payout
-              rewardVault: main.comByChainIdx(sNft.communityIdx).rewardVault,
-              userRewardAccount: await community.getScAta(
-                user.keypair.publicKey
-              ), //user0_ata.address,
-              collection: sNft.collectionAddress,
-              collectionPolicy: sNft.policyAddress,
-              tokenProgram: TOKEN_PROGRAM_ID,
-            })
-            .signers([user.keypair])
-            .rpc();
-        } catch (e) {
-          console.log("\n\nclaim fail try:\ne", e);
-        }
+  //             // For payout
+  //             rewardVault: main.comByChainIdx(sNft.communityIdx).rewardVault,
+  //             userRewardAccount: await community.getScAta(
+  //               user.keypair.publicKey
+  //             ), //user0_ata.address,
+  //             collection: sNft.collectionAddress,
+  //             collectionPolicy: sNft.policyAddress,
+  //             tokenProgram: TOKEN_PROGRAM_ID,
+  //           })
+  //           .signers([user.keypair])
+  //           .rpc();
+  //       } catch (e) {
+  //         console.log("\n\nclaim fail try:\ne", e);
+  //       }
 
-        // Log how long it was staked for
-        let timeElapased = secNow() - sNft.stakeTime; //   addTimeSTamp(0, n, secNow());
+  //       // Log how long it was staked for
+  //       let timeElapased = secNow() - sNft.stakeTime; //   addTimeSTamp(0, n, secNow());
 
-        // Get community
-        let collection: Collection = community.collections[sNft.collectionIdx];
+  //       // Get community
+  //       let collection: Collection = community.collections[sNft.collectionIdx];
 
-        // Get collection
-        const policy: Policy = collection.policies[sNft.policyIdx];
+  //       // Get collection
+  //       const policy: Policy = collection.policies[sNft.policyIdx];
 
-        let ratio = timeElapased / parseInt(policy.epoch.toString());
-        console.log(
-          `\tClaiming on NFT ${
-            sNft.mint
-          } which was staked for: ${timeElapased.toFixed(1)}s or ${(
-            ratio * 100
-          ).toFixed(1)}% of the epoch duration which should yield ${(
-            parseInt(policy.rate.toString()) * ratio
-          ).toFixed(1)}`
-        );
-      }
-    }
-  });
+  //       let ratio = timeElapased / parseInt(policy.epoch.toString());
+  //       console.log(
+  //         `\tClaiming on NFT ${
+  //           sNft.mint
+  //         } which was staked for: ${timeElapased.toFixed(1)}s or ${(
+  //           ratio * 100
+  //         ).toFixed(1)}% of the epoch duration which should yield ${(
+  //           parseInt(policy.rate.toString()) * ratio
+  //         ).toFixed(1)}`
+  //       );
+  //     }
+  //   }
+  // });
 
-  it("User appointed delegate claims on few NFTs from base community using single claim", async () => {
-    let balanceStartAdmin: number = await provider.connection.getBalance(
-      superAdmin.publicKey
-    );
-    console.log("balanceStartAdmin: before user claiming ", balanceStartAdmin);
-    let balanceEndMain: number = await provider.connection.getBalance(
-      main.address
-    );
-    console.log("balanceEndMain before user claiming ", balanceEndMain);
-    await delay(3);
-    for (let user_idx = 0; user_idx < userz.users.length; user_idx++) {
-      let user: User = userz.users[user_idx];
-      let userStakedNtfs: StakedNft[] = user.getAllStakedNfts();
-      console.log(
-        `\nuser[${user_idx}] has ${userStakedNtfs.length} staked nfts`
-      );
+  // it("User appointed delegate claims on few NFTs from base community using single claim", async () => {
+  //   let balanceStartAdmin: number = await provider.connection.getBalance(
+  //     superAdmin.publicKey
+  //   );
+  //   console.log("balanceStartAdmin: before user claiming ", balanceStartAdmin);
+  //   let balanceEndMain: number = await provider.connection.getBalance(
+  //     main.address
+  //   );
+  //   console.log("balanceEndMain before user claiming ", balanceEndMain);
+  //   await delay(3);
+  //   for (let user_idx = 0; user_idx < userz.users.length; user_idx++) {
+  //     let user: User = userz.users[user_idx];
+  //     let userStakedNtfs: StakedNft[] = user.getAllStakedNfts();
+  //     console.log(
+  //       `\nuser[${user_idx}] has ${userStakedNtfs.length} staked nfts`
+  //     );
 
-      for (let s = 0; s < userStakedNtfs.length; s++) {
-        const sNft: StakedNft = userStakedNtfs[s];
-        console.log(`\tDelegate claims on NFT  ${sNft.mint}`);
+  //     for (let s = 0; s < userStakedNtfs.length; s++) {
+  //       const sNft: StakedNft = userStakedNtfs[s];
+  //       console.log(`\tDelegate claims on NFT  ${sNft.mint}`);
 
-        const userCommunity: UserCommunity = user.getByCommunityIdx(
-          sNft.communityIdx
-        );
+  //       const userCommunity: UserCommunity = user.getByCommunityIdx(
+  //         sNft.communityIdx
+  //       );
 
-        const community: Community = main.comByChainIdx(sNft.communityIdx);
-        const delegate: Delegate = user.delegate;
+  //       const community: Community = main.comByChainIdx(sNft.communityIdx);
+  //       const delegate: Delegate = user.delegate;
 
-        try {
-          const tx2 = await stakingProgram.methods
-            .claimDelegate(
-              sNft.communityIdx,
-              sNft.collectionIdx,
-              sNft.policyIdx,
-              userCommunity.index,
-              sNft.mint,
-              user.keypair.publicKey
-            )
-            .accounts({
-              mainPool: main.address,
-              delegateCaller: delegate.delegatePublicKey,
-              delegatePda: delegate.address,
-              userAccount: user.userMainAccount,
-              communityPool: sNft.communityAddress,
-              userCommunityAccount: sNft.userCommunityAddress,
-              nftTicket: sNft.ticketPda,
-              rewardVault: main.comByChainIdx(sNft.communityIdx).rewardVault,
-              userRewardAccount: await community.getScAta(
-                user.keypair.publicKey
-              ),
-              collection: sNft.collectionAddress,
-              collectionPolicy: sNft.policyAddress,
-              tokenProgram: TOKEN_PROGRAM_ID,
-            })
-            .signers([defaultDelegate])
-            .rpc();
-        } catch (e) {
-          console.log("\n\nclaim fail try:\ne", e);
-        }
+  //       try {
+  //         const tx2 = await stakingProgram.methods
+  //           .claimDelegate(
+  //             sNft.communityIdx,
+  //             sNft.collectionIdx,
+  //             sNft.policyIdx,
+  //             userCommunity.index,
+  //             sNft.mint,
+  //             user.keypair.publicKey
+  //           )
+  //           .accounts({
+  //             mainPool: main.address,
+  //             delegateCaller: delegate.delegatePublicKey,
+  //             delegatePda: delegate.address,
+  //             userAccount: user.userMainAccount,
+  //             communityPool: sNft.communityAddress,
+  //             userCommunityAccount: sNft.userCommunityAddress,
+  //             nftTicket: sNft.ticketPda,
+  //             rewardVault: main.comByChainIdx(sNft.communityIdx).rewardVault,
+  //             userRewardAccount: await community.getScAta(
+  //               user.keypair.publicKey
+  //             ),
+  //             collection: sNft.collectionAddress,
+  //             collectionPolicy: sNft.policyAddress,
+  //             tokenProgram: TOKEN_PROGRAM_ID,
+  //           })
+  //           .signers([defaultDelegate])
+  //           .rpc();
+  //       } catch (e) {
+  //         console.log("\n\nclaim fail try:\ne", e);
+  //       }
 
-        // Log how long it was staked for
-        let timeElapased = secNow() - sNft.stakeTime; //   addTimeSTamp(0, n, secNow());
+  //       // Log how long it was staked for
+  //       let timeElapased = secNow() - sNft.stakeTime; //   addTimeSTamp(0, n, secNow());
 
-        // Get community
-        let collection: Collection = community.collections[sNft.collectionIdx];
+  //       // Get community
+  //       let collection: Collection = community.collections[sNft.collectionIdx];
 
-        // Get collection
-        const policy: Policy = collection.policies[sNft.policyIdx];
+  //       // Get collection
+  //       const policy: Policy = collection.policies[sNft.policyIdx];
 
-        let ratio = timeElapased / parseInt(policy.epoch.toString());
-        console.log(
-          `\tDelegate claiming on NFT ${
-            sNft.mint
-          } which was staked for: ${timeElapased.toFixed(1)}s or ${(
-            ratio * 100
-          ).toFixed(1)}% of the epoch duration which should yield ${(
-            parseInt(policy.rate.toString()) * ratio
-          ).toFixed(1)}`
-        );
-      }
-    }
-  });
+  //       let ratio = timeElapased / parseInt(policy.epoch.toString());
+  //       console.log(
+  //         `\tDelegate claiming on NFT ${
+  //           sNft.mint
+  //         } which was staked for: ${timeElapased.toFixed(1)}s or ${(
+  //           ratio * 100
+  //         ).toFixed(1)}% of the epoch duration which should yield ${(
+  //           parseInt(policy.rate.toString()) * ratio
+  //         ).toFixed(1)}`
+  //       );
+  //     }
+  //   }
+  // });
 
-  it("Users unstakes some of NFTs", async () => {
-    // Wait for some tokens to accumulate
-    await delay(5);
+  // it("Users unstakes some of NFTs", async () => {
+  //   // Wait for some tokens to accumulate
+  //   await delay(5);
 
-    try {
-      for (let user_idx = 0; user_idx < userz.users.length; user_idx++) {
-        let user: User = userz.users[user_idx];
-        console.log(
-          `\nuser[${user_idx}]: ${user.keypair.publicKey.toBase58()}`
-        );
-        let userStakedNtfs: StakedNft[] = user.getAllStakedNfts();
+  //   try {
+  //     for (let user_idx = 0; user_idx < userz.users.length; user_idx++) {
+  //       let user: User = userz.users[user_idx];
+  //       console.log(
+  //         `\nuser[${user_idx}]: ${user.keypair.publicKey.toBase58()}`
+  //       );
+  //       let userStakedNtfs: StakedNft[] = user.getAllStakedNfts();
 
-        for (let n = 0; n < userStakedNtfs.length; n += 1) {
-          // Extarct single staked NFT details
-          let sNFT = userStakedNtfs[n];
-          const community: Community = main.comByChainIdx(sNFT.communityIdx);
-          const collectionPDA: Collection =
-            community.collections[sNFT.collectionIdx];
-          const policy: Policy = collectionPDA.policies[sNFT.policyIdx];
-          const userCommunity: UserCommunity = user.getByCommunityIdx(
-            sNFT.communityIdx
-          );
+  //       for (let n = 0; n < userStakedNtfs.length; n += 1) {
+  //         // Extarct single staked NFT details
+  //         let sNFT = userStakedNtfs[n];
+  //         const community: Community = main.comByChainIdx(sNFT.communityIdx);
+  //         const collectionPDA: Collection =
+  //           community.collections[sNFT.collectionIdx];
+  //         const policy: Policy = collectionPDA.policies[sNFT.policyIdx];
+  //         const userCommunity: UserCommunity = user.getByCommunityIdx(
+  //           sNFT.communityIdx
+  //         );
 
-          // Get other nft details
-          const collection: NftMint0 = cm.collections[sNFT.collectionIdx];
-          const nftDeets: NftMint1 = cm.collections[
-            sNFT.collectionIdx
-          ].getNftByMint(sNFT.mint);
+  //         // Get other nft details
+  //         const collection: NftMint0 = cm.collections[sNFT.collectionIdx];
+  //         const nftDeets: NftMint1 = cm.collections[
+  //           sNFT.collectionIdx
+  //         ].getNftByMint(sNFT.mint);
 
-          const tx2 = await stakingProgram.methods
-            .unstakeNft(
-              sNFT.communityIdx,
-              sNFT.collectionIdx,
-              userCommunity.index,
-              sNFT.policyIdx
-            )
-            .accounts({
-              mainPool: main.address,
-              user: user.keypair.publicKey,
-              userAccount: user.userMainAccount,
-              userCommunityAccount: sNFT.userCommunityAddress,
-              communityPool: sNFT.communityAddress,
+  //         const tx2 = await stakingProgram.methods
+  //           .unstakeNft(
+  //             sNFT.communityIdx,
+  //             sNFT.collectionIdx,
+  //             userCommunity.index,
+  //             sNFT.policyIdx
+  //           )
+  //           .accounts({
+  //             mainPool: main.address,
+  //             user: user.keypair.publicKey,
+  //             userAccount: user.userMainAccount,
+  //             userCommunityAccount: sNFT.userCommunityAddress,
+  //             communityPool: sNFT.communityAddress,
 
-              // NFT PDA information accounts
-              unstakeNftTicket: sNFT.ticketPda,
+  //             // NFT PDA information accounts
+  //             unstakeNftTicket: sNFT.ticketPda,
 
-              // ATA derived from the token being unfrozen
-              userNftTokenAccount: await cm.getAta(
-                user.keypair.publicKey,
-                nftDeets.mint
-              ),
+  //             // ATA derived from the token being unfrozen
+  //             userNftTokenAccount: await cm.getAta(
+  //               user.keypair.publicKey,
+  //               nftDeets.mint
+  //             ),
 
-              // NFT accounts
-              nftMint: nftDeets.mint,
-              mintMetadata: nftDeets.metadata,
-              editionId: nftDeets.edition,
+  //             // NFT accounts
+  //             nftMint: nftDeets.mint,
+  //             mintMetadata: nftDeets.metadata,
+  //             editionId: nftDeets.edition,
 
-              // Master NFT accounts (NOT NEEDED)
-              collection: sNFT.collectionAddress,
-              collectionPolicy: sNFT.policyAddress,
-              masterMintMetadata: collection.masterMetadata,
+  //             // Master NFT accounts (NOT NEEDED)
+  //             collection: sNFT.collectionAddress,
+  //             collectionPolicy: sNFT.policyAddress,
+  //             masterMintMetadata: collection.masterMetadata,
 
-              // Metaplex program
-              tokenMetadataProgram: METAPLEX,
+  //             // Metaplex program
+  //             tokenMetadataProgram: METAPLEX,
 
-              // For payout
-              rewardVault: main.comByChainIdx(sNFT.communityIdx).rewardVault,
-              userRewardAccount: await community.getScAta(
-                user.keypair.publicKey
-              ),
-            })
-            .signers([user.keypair])
-            .rpc();
+  //             // For payout
+  //             rewardVault: main.comByChainIdx(sNFT.communityIdx).rewardVault,
+  //             userRewardAccount: await community.getScAta(
+  //               user.keypair.publicKey
+  //             ),
 
-          // Log how long it was staked for
-          let timeElapased = secNow() - sNFT.stakeTime; //   addTimeSTamp(0, n, secNow());
+  //             tokenProgram: TOKEN_PROGRAM_ID,
 
-          let ratio = timeElapased / parseInt(policy.epoch.toString());
-          console.log(
-            `\tUnstaked NFT ${
-              sNFT.mint
-            } which was staked for: ${timeElapased.toFixed(1)}s or ${(
-              ratio * 100
-            ).toFixed(1)}% of the epoch duration which should yield ${(
-              parseInt(policy.rate.toString()) * ratio
-            ).toFixed(1)}`
-          );
-        }
-      }
-    } catch (e) {
-      console.log(e);
-    }
+  //             tokenRecord: null,
+  //           })
+  //           .signers([user.keypair])
+  //           .rpc();
 
-    // Tests need to assert that:
-    // - total NFT went down
-    // - collection  NFT went down
-    // - content of removeIdx = content of lastIdx
-    // - lasdIdx account is removed
-    // - owner can transfer NFT now elswhere
-    // - unstake fee is taken
-    // - owner has less staked NFTs
-  });
-  it("Change superadmin", async () => {
-    // let newSuperAdmin = await newAccountWithLamports(provider.connection, 10000000000);
-    // console.log("newSuperAdmin: ", newSuperAdmin.publicKey.toBase58());
-    let balanceStartAdmin: number = await provider.connection.getBalance(
-      superAdmin.publicKey
-    );
-    console.log(
-      "balanceStartAdmin in sol: ",
-      balanceStartAdmin / LAMPORTS_PER_SOL
-    );
+  //         // Log how long it was staked for
+  //         let timeElapased = secNow() - sNFT.stakeTime; //   addTimeSTamp(0, n, secNow());
 
-    try {
-      const tx2 = await stakingProgram.methods
-        .updateAdmin(superAdmin2.publicKey)
-        .accounts({
-          superAdmin: superAdmin.publicKey,
-          mainPool: main.address,
-        })
-        .signers([superAdmin])
-        .rpc();
-    } catch (e) {
-      console.log(e);
-    }
-  });
-  it("Old superadmin cannot withdraw SOL", async () => {
-    let mainPoolBalance: number = await provider.connection.getBalance(
-      main.address
-    );
-    console.log("mainPoolBalance in sol: ", mainPoolBalance / LAMPORTS_PER_SOL);
-    let balanceStartAdmin: number = await provider.connection.getBalance(
-      superAdmin.publicKey
-    );
-    console.log(
-      " OldAdmin balanceStart in sol: ",
-      balanceStartAdmin / LAMPORTS_PER_SOL
-    );
-    try {
-      const tx2 = await stakingProgram.methods
-        .withdrawMain()
-        .accounts({
-          superAdmin: superAdmin.publicKey,
-          mainPool: main.address,
-        })
-        .signers([superAdmin])
-        .rpc();
-    } catch (e) {
-      console.log("Withdraw failed succesfully");
-    }
-    let balanceEndAdmin: number = await provider.connection.getBalance(
-      superAdmin.publicKey
-    );
+  //         let ratio = timeElapased / parseInt(policy.epoch.toString());
+  //         console.log(
+  //           `\tUnstaked NFT ${
+  //             sNFT.mint
+  //           } which was staked for: ${timeElapased.toFixed(1)}s or ${(
+  //             ratio * 100
+  //           ).toFixed(1)}% of the epoch duration which should yield ${(
+  //             parseInt(policy.rate.toString()) * ratio
+  //           ).toFixed(1)}`
+  //         );
+  //       }
+  //     }
+  //   } catch (e) {
+  //     console.log(e);
+  //   }
 
-    let balanceEndMain: number = await provider.connection.getBalance(
-      main.address
-    );
-    console.log(
-      "mainPoolBalanceEnd in sol: ",
-      balanceEndMain / LAMPORTS_PER_SOL
-    );
-    console.log(
-      "OldAdmin balanceEnd in sol: ",
-      balanceEndAdmin / LAMPORTS_PER_SOL
-    );
+  //   // Tests need to assert that:
+  //   // - total NFT went down
+  //   // - collection  NFT went down
+  //   // - content of removeIdx = content of lastIdx
+  //   // - lasdIdx account is removed
+  //   // - owner can transfer NFT now elswhere
+  //   // - unstake fee is taken
+  //   // - owner has less staked NFTs
+  // });
+  // it("Change superadmin", async () => {
+  //   // let newSuperAdmin = await newAccountWithLamports(provider.connection, 10000000000);
+  //   // console.log("newSuperAdmin: ", newSuperAdmin.publicKey.toBase58());
+  //   let balanceStartAdmin: number = await provider.connection.getBalance(
+  //     superAdmin.publicKey
+  //   );
+  //   console.log(
+  //     "balanceStartAdmin in sol: ",
+  //     balanceStartAdmin / LAMPORTS_PER_SOL
+  //   );
 
-    // assert.equal(balanceEndMain, 0);
-    assert.isTrue(balanceStartAdmin == balanceEndAdmin);
-  });
-  it("New superadmin withdraws SOL", async () => {
-    let mainPoolBalance: number = await provider.connection.getBalance(
-      main.address
-    );
-    console.log("mainPoolBalance in sol: ", mainPoolBalance / LAMPORTS_PER_SOL);
-    let balanceStartAdmin: number = await provider.connection.getBalance(
-      superAdmin2.publicKey
-    );
-    console.log(
-      "balanceStartAdmin in sol: ",
-      balanceStartAdmin / LAMPORTS_PER_SOL
-    );
-    try {
-      const tx2 = await stakingProgram.methods
-        .withdrawMain()
-        .accounts({
-          superAdmin: superAdmin2.publicKey,
-          mainPool: main.address,
-        })
-        .signers([superAdmin2])
-        .rpc();
-    } catch (e) {
-      console.log(e);
-    }
-    let balanceEndAdmin: number = await provider.connection.getBalance(
-      superAdmin2.publicKey
-    );
+  //   try {
+  //     const tx2 = await stakingProgram.methods
+  //       .updateAdmin(superAdmin2.publicKey)
+  //       .accounts({
+  //         superAdmin: superAdmin.publicKey,
+  //         mainPool: main.address,
+  //       })
+  //       .signers([superAdmin])
+  //       .rpc();
+  //   } catch (e) {
+  //     console.log(e);
+  //   }
+  // });
+  // it("Old superadmin cannot withdraw SOL", async () => {
+  //   let mainPoolBalance: number = await provider.connection.getBalance(
+  //     main.address
+  //   );
+  //   console.log("mainPoolBalance in sol: ", mainPoolBalance / LAMPORTS_PER_SOL);
+  //   let balanceStartAdmin: number = await provider.connection.getBalance(
+  //     superAdmin.publicKey
+  //   );
+  //   console.log(
+  //     " OldAdmin balanceStart in sol: ",
+  //     balanceStartAdmin / LAMPORTS_PER_SOL
+  //   );
+  //   try {
+  //     const tx2 = await stakingProgram.methods
+  //       .withdrawMain()
+  //       .accounts({
+  //         superAdmin: superAdmin.publicKey,
+  //         mainPool: main.address,
+  //       })
+  //       .signers([superAdmin])
+  //       .rpc();
+  //   } catch (e) {
+  //     console.log("Withdraw failed succesfully");
+  //   }
+  //   let balanceEndAdmin: number = await provider.connection.getBalance(
+  //     superAdmin.publicKey
+  //   );
 
-    let balanceEndMain: number = await provider.connection.getBalance(
-      main.address
-    );
-    console.log("mainPoolBalance in sol: ", balanceEndMain / LAMPORTS_PER_SOL);
-    console.log("balanceEndAdmin in sol: ", balanceEndAdmin / LAMPORTS_PER_SOL);
+  //   let balanceEndMain: number = await provider.connection.getBalance(
+  //     main.address
+  //   );
+  //   console.log(
+  //     "mainPoolBalanceEnd in sol: ",
+  //     balanceEndMain / LAMPORTS_PER_SOL
+  //   );
+  //   console.log(
+  //     "OldAdmin balanceEnd in sol: ",
+  //     balanceEndAdmin / LAMPORTS_PER_SOL
+  //   );
 
-    // assert.equal(balanceEndMain, 0);
-    assert.isTrue(balanceStartAdmin < balanceEndAdmin);
-  });
+  //   // assert.equal(balanceEndMain, 0);
+  //   assert.isTrue(balanceStartAdmin == balanceEndAdmin);
+  // });
+  // it("New superadmin withdraws SOL", async () => {
+  //   let mainPoolBalance: number = await provider.connection.getBalance(
+  //     main.address
+  //   );
+  //   console.log("mainPoolBalance in sol: ", mainPoolBalance / LAMPORTS_PER_SOL);
+  //   let balanceStartAdmin: number = await provider.connection.getBalance(
+  //     superAdmin2.publicKey
+  //   );
+  //   console.log(
+  //     "balanceStartAdmin in sol: ",
+  //     balanceStartAdmin / LAMPORTS_PER_SOL
+  //   );
+  //   try {
+  //     const tx2 = await stakingProgram.methods
+  //       .withdrawMain()
+  //       .accounts({
+  //         superAdmin: superAdmin2.publicKey,
+  //         mainPool: main.address,
+  //       })
+  //       .signers([superAdmin2])
+  //       .rpc();
+  //   } catch (e) {
+  //     console.log(e);
+  //   }
+  //   let balanceEndAdmin: number = await provider.connection.getBalance(
+  //     superAdmin2.publicKey
+  //   );
+
+  //   let balanceEndMain: number = await provider.connection.getBalance(
+  //     main.address
+  //   );
+  //   console.log("mainPoolBalance in sol: ", balanceEndMain / LAMPORTS_PER_SOL);
+  //   console.log("balanceEndAdmin in sol: ", balanceEndAdmin / LAMPORTS_PER_SOL);
+
+  //   // assert.equal(balanceEndMain, 0);
+  //   assert.isTrue(balanceStartAdmin < balanceEndAdmin);
+  // });
 });

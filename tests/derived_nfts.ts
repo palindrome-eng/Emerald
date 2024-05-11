@@ -18,7 +18,7 @@ import {
   TransferNftInput,
   walletAdapterIdentity,
 } from "@metaplex-foundation/js";
-
+import { TokenStandard } from "@metaplex-foundation/mpl-token-metadata";
 import {
   createMint,
   createAccount,
@@ -35,6 +35,14 @@ import {
 } from "@solana/spl-token";
 
 // import { getBalance } from "./helper";
+
+export interface CollectionInit {
+  uri: string;
+  keypair?: Keypair;
+  name?: string;
+  symbol?: string;
+  pnft?: boolean;
+}
 
 export class NftMint1 {
   constructor(
@@ -59,15 +67,27 @@ export class NftMint1 {
     let newOwnerAta = await this.getAta(ownerNew);
     let currentOwnerAta = await this.getAta(this.owner);
 
-    await transfer(
-      this.parent.parent.connection,
-      this.parent.parent.payer,
-      currentOwnerAta,
-      newOwnerAta,
-      this.owner,
-      1,
-      [this.parent.parent.payer]
-    );
+    // try {
+    const nft = await this.parent.parent.metaplex
+      .nfts()
+      .findByMint({ mintAddress: this.mint });
+
+    console.log("Found nft");
+
+    // Log NFT token account balance
+    // let balanceStart = await g;/
+
+    let george = await this.parent.parent.metaplex
+      .nfts()
+      .builders()
+      .transfer({
+        nftOrSft: nft,
+        fromOwner: this.owner,
+        toOwner: ownerNew,
+        amount: token(1),
+        authority: this.parent.parent.payer,
+      })
+      .sendAndConfirm(this.parent.parent.metaplex);
 
     // Update owner
     this.owner = ownerNew;
@@ -101,7 +121,11 @@ export class NftMint0 {
     keypair: Keypair,
     uri: string = this.uri
   ) {
-    const mintNFTResponse = await this.parent.metaplex.nfts().create({
+    let mintNFTResponse;
+
+    // if (this.parent.pNFT == true) {
+    console.log("This is a pNFT: ", this.parent.pNFT);
+    mintNFTResponse = await this.parent.metaplex.nfts().create({
       uri,
       maxSupply: 1,
       name: `The Anon Club #${index}`,
@@ -112,7 +136,26 @@ export class NftMint0 {
       updateAuthority: keypair,
       collection,
       collectionAuthority: keypair,
+      tokenStandard: this.parent.pNFT
+        ? TokenStandard.ProgrammableNonFungible
+        : null,
+      ruleSet: null,
     });
+    // } else {
+    //   console.log("This is not a PNFT");
+    //   mintNFTResponse = await this.parent.metaplex.nfts().create({
+    //     uri,
+    //     maxSupply: 1,
+    //     name: `The Anon Club #${index}`,
+    //     primarySaleHappened: true,
+    //     isMutable: true,
+    //     sellerFeeBasisPoints: 500,
+    //     symbol: "ANON",
+    //     updateAuthority: keypair,
+    //     collection,
+    //     collectionAuthority: keypair,
+    //   });
+    // }
 
     this.addNFTMint(mintNFTResponse.mintAddress, keypair.publicKey);
     console.log(`${index}: `, mintNFTResponse.mintAddress.toBase58());
@@ -138,6 +181,7 @@ export class NftMint0 {
 
 export class CollectionsMaster {
   collections: NftMint0[] = [];
+  pNFT: boolean = false;
 
   constructor(
     public connection: Connection,
@@ -171,25 +215,47 @@ export class CollectionsMaster {
     return [startingBalanceSOL, lamports];
   }
 
-  async initializeCollection(
-    uri: string,
-    keypair: Keypair = this.payer,
-    name: string = "The Anon club",
-    symbol: string = "ANON"
-  ) {
-    //
-    console.log("Collection auth: ", keypair.publicKey.toBase58());
-    const mintNFTResponse = await this.metaplex.nfts().create({
+  async initializeCollection(ci: CollectionInit) {
+    const {
       uri,
-      name,
-      primarySaleHappened: false,
-      isMutable: true,
-      sellerFeeBasisPoints: 500,
-      symbol,
-      updateAuthority: keypair,
-      isCollection: true,
-      collectionIsSized: true,
-    });
+      keypair = this.payer,
+      name = "The Anon club",
+      symbol = "ANON",
+      pnft = false,
+    } = ci;
+    //
+    // console.log("Collection auth: ", ci.keypair.publicKey.toBase58());
+    let mintNFTResponse;
+
+    if (pnft) {
+      mintNFTResponse = await this.metaplex.nfts().create({
+        uri,
+        name,
+        primarySaleHappened: false,
+        isMutable: true,
+        sellerFeeBasisPoints: 500,
+        symbol,
+        updateAuthority: keypair,
+        isCollection: true,
+        collectionIsSized: true,
+        ruleSet: null,
+      });
+
+      this.pNFT = true;
+    } else {
+      mintNFTResponse = await this.metaplex.nfts().create({
+        uri,
+        name,
+        primarySaleHappened: false,
+        isMutable: true,
+        sellerFeeBasisPoints: 500,
+        symbol,
+        updateAuthority: keypair,
+        isCollection: true,
+        collectionIsSized: true,
+      });
+      this.pNFT = false;
+    }
 
     // metaplex.use(keypairIdentity(<keypair>))
 

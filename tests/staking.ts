@@ -36,8 +36,8 @@ describe("Emerald staking", async () => {
   anchor.setProvider(anchor.AnchorProvider.env());
   const provider = anchor.getProvider();
 
-  async function getTokenBalance(ata) {
-    return Number((await getAccount(provider.connection, ata.address)).amount);
+  async function getTokenBalance(AtaSc: PublicKey) {
+    return Number((await getAccount(provider.connection, AtaSc)).amount);
   }
 
   async function topUp(topUpAcc: PublicKey) {
@@ -122,7 +122,7 @@ describe("Emerald staking", async () => {
 
     for (let i = 0; i < number_of_collections; i++) {
       // Mint of 1 index 1
-      await cm.initializeCollection(uri);
+      await cm.initializeCollection({ uri, pnft: false });
 
       // Mint whole collection
       await cm.collections[i].premintNFTs(nfts_per_collections);
@@ -630,6 +630,13 @@ describe("Emerald staking", async () => {
 
           let nft = collectionM.nfts[nftsGone];
 
+          // let uAta = await nft.getAta(user.keypair.publicKey);
+
+          // console.log("Ata: ", uAta.toBase58());
+
+          // // Log balance for user for this nft
+          // console.log("User NFT balance: ", await getTokenBalance(uAta));
+
           // console.log(
           //   `Transfered ${nft.mint.toBase58()} from mint master to ${user.keypair.publicKey.toBase58()}`
           // );
@@ -687,6 +694,8 @@ describe("Emerald staking", async () => {
 
           // Unstake
           await delay(2);
+
+          //
 
           // console.log(
           //   `\tunstaking NFT, ${n} ${nft.mint.toBase58()} at ATA: ${(
