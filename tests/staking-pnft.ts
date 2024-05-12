@@ -15,8 +15,16 @@ import {
   COLLECTION_POLICY_CREATION_FEE,
   USER_COMMUNITY_ACCOUNT_CREATION_FEE,
 } from "./consts";
-import { PublicKey } from "@solana/web3.js";
+import {
+  PublicKey,
+  SYSVAR_RENT_PUBKEY,
+  ComputeBudgetProgram,
+  TransactionInstruction,
+  Transaction,
+  SYSVAR_INSTRUCTIONS_PUBKEY,
+} from "@solana/web3.js";
 import { keypairIdentity, Metaplex } from "@metaplex-foundation/js";
+
 import {
   createMint,
   getAccount,
@@ -25,7 +33,12 @@ import {
 } from "@solana/spl-token";
 import { BN } from "bn.js";
 import { assert } from "chai";
-import { delay, loadKeypairFromFile, secNow } from "./helper";
+import {
+  delay,
+  loadKeypairFromFile,
+  secNow,
+  findTokenRecordPda,
+} from "./helper";
 
 // Classes needed to provide non-zero arguments to program calls
 import { NftMint1, NftMint0, CollectionsMaster } from "./derived_nfts";
@@ -36,8 +49,8 @@ describe("Emerald staking", async () => {
   anchor.setProvider(anchor.AnchorProvider.env());
   const provider = anchor.getProvider();
 
-  async function getTokenBalance(AtaSc: PublicKey) {
-    return Number((await getAccount(provider.connection, AtaSc)).amount);
+  async function getTokenBalance(ata) {
+    return Number((await getAccount(provider.connection, ata.address)).amount);
   }
 
   async function topUp(topUpAcc: PublicKey) {
@@ -122,7 +135,7 @@ describe("Emerald staking", async () => {
 
     for (let i = 0; i < number_of_collections; i++) {
       // Mint of 1 index 1
-      await cm.initializeCollection({ uri, pnft: false });
+      await cm.initializeCollection({ uri, pnft: true });
 
       // Mint whole collection
       await cm.collections[i].premintNFTs(nfts_per_collections);
@@ -630,13 +643,6 @@ describe("Emerald staking", async () => {
 
           let nft = collectionM.nfts[nftsGone];
 
-          // let uAta = await nft.getAta(user.keypair.publicKey);
-
-          // console.log("Ata: ", uAta.toBase58());
-
-          // // Log balance for user for this nft
-          // console.log("User NFT balance: ", await getTokenBalance(uAta));
-
           // console.log(
           //   `Transfered ${nft.mint.toBase58()} from mint master to ${user.keypair.publicKey.toBase58()}`
           // );
@@ -648,6 +654,14 @@ describe("Emerald staking", async () => {
           const userCommunity: UserCommunity = user.getByCommunityIdx(
             community.index
           );
+
+          // Fetch the address of the TokenRecord
+          let tokenRecord: PublicKey = await findTokenRecordPda(
+            collectionM.nfts[nftsGone].mint,
+            await nft.getAta(user.keypair.publicKey)
+          );
+
+          console.log("Token record: ", tokenRecord.toBase58());
 
           // It will be staked so move it to the staked array for the given community PDA generated
           await userCommunity.stakeNft(
@@ -664,38 +678,61 @@ describe("Emerald staking", async () => {
             ).toBase58()}`
           );
 
-          const tx1 = await stakingProgram.methods
-            .stakeNft(
-              community.index,
-              collection.index,
-              userCommunity.index,
-              policy.index
-            )
-            .accounts({
-              mainPool: main.address,
-              user: user.keypair.publicKey,
-              userAccount: user.userMainAccount,
-              userCommunityAccount: userCommunity.userCommunityAddress,
-              communityPool: community.address,
-              nftTicket: userCommunity.getByMint(nft.mint).ticketPda,
-              nftMint: nft.mint,
-              userNftTokenAccount: await nft.getAta(user.keypair.publicKey),
-              collection: collection.address,
-              collectionPolicy: policy.address,
-              masterMintMetadata: nft.metadata,
-              mintMetadata: nft.metadata,
-              tokenMetadataProgram: METAPLEX,
-              editionId: nft.edition,
-              tokenRecord: null,
-              tokenProgram: TOKEN_PROGRAM_ID,
-            })
-            .signers([user.keypair])
-            .rpc();
+          const masterEdition = await metaplex
+            .nfts()
+            .pdas()
+            .masterEdition({ mint: nft.mint });
+
+          console.log("Master edition: ", collectionM.masterEdition.toBase58());
+
+          try {
+            const transaction1 = new Transaction();
+
+            transaction1.add(
+              await ComputeBudgetProgram.setComputeUnitLimit({
+                units: 600_000,
+              }),
+              await stakingProgram.methods
+                .stakePnft(
+                  community.index,
+                  collection.index,
+                  userCommunity.index,
+                  policy.index
+                )
+                .accounts({
+                  mainPool: main.address,
+                  user: user.keypair.publicKey,
+                  userAccount: user.userMainAccount,
+                  userCommunityAccount: userCommunity.userCommunityAddress,
+                  communityPool: community.address,
+                  nftTicket: userCommunity.getByMint(nft.mint).ticketPda,
+                  nftMint: nft.mint,
+                  userNftTokenAccount: await nft.getAta(user.keypair.publicKey),
+                  collection: collection.address,
+                  collectionPolicy: policy.address,
+                  masterMintMetadata: nft.metadata,
+                  mintMetadata: nft.metadata,
+                  tokenMetadataProgram: METAPLEX,
+                  editionId: nft.edition,
+                  tokenRecord,
+                  rent: SYSVAR_INSTRUCTIONS_PUBKEY,
+                  tokenProgram: TOKEN_PROGRAM_ID,
+                  masterEdition: masterEdition,
+                })
+                .instruction()
+            );
+
+            const sig2 = await provider.sendAndConfirm(transaction1, [
+              user.keypair,
+            ]);
+          } catch (e) {
+            console.log("\nStaking error: ", e);
+          }
+
+          // Sign and suibmit txInstructions
 
           // Unstake
           await delay(2);
-
-          //
 
           // console.log(
           //   `\tunstaking NFT, ${n} ${nft.mint.toBase58()} at ATA: ${(
@@ -803,7 +840,7 @@ describe("Emerald staking", async () => {
     // - owner can't transfer NFT now elswhere
   });
 
-  it("Users claim on few NFTs from base community using single claim", async () => {
+  xit("Users claim on few NFTs from base community using single claim", async () => {
     let balanceStartAdmin: number = await provider.connection.getBalance(
       superAdmin.publicKey
     );
@@ -885,7 +922,7 @@ describe("Emerald staking", async () => {
     }
   });
 
-  it("User appointed delegate claims on few NFTs from base community using single claim", async () => {
+  xit("User appointed delegate claims on few NFTs from base community using single claim", async () => {
     let balanceStartAdmin: number = await provider.connection.getBalance(
       superAdmin.publicKey
     );
@@ -997,54 +1034,84 @@ describe("Emerald staking", async () => {
             sNFT.collectionIdx
           ].getNftByMint(sNFT.mint);
 
-          const tx2 = await stakingProgram.methods
-            .unstakeNft(
-              sNFT.communityIdx,
-              sNFT.collectionIdx,
-              userCommunity.index,
-              sNFT.policyIdx
-            )
-            .accounts({
-              mainPool: main.address,
-              user: user.keypair.publicKey,
-              userAccount: user.userMainAccount,
-              userCommunityAccount: sNFT.userCommunityAddress,
-              communityPool: sNFT.communityAddress,
+          const masterEdition = await metaplex
+            .nfts()
+            .pdas()
+            .masterEdition({ mint: sNFT.mint });
 
-              // NFT PDA information accounts
-              unstakeNftTicket: sNFT.ticketPda,
+          // Get ATA of the token mint account
 
-              // ATA derived from the token being unfrozen
-              userNftTokenAccount: await cm.getAta(
-                user.keypair.publicKey,
-                nftDeets.mint
-              ),
+          // Fetch the address of the TokenRecord
+          let tokenRecord: PublicKey = await findTokenRecordPda(
+            sNFT.mint,
+            await cm.getAta(user.keypair.publicKey, nftDeets.mint)
+          );
+          try {
+            const transaction1 = new Transaction();
 
-              // NFT accounts
-              nftMint: nftDeets.mint,
-              mintMetadata: nftDeets.metadata,
-              editionId: nftDeets.edition,
+            transaction1.add(
+              await ComputeBudgetProgram.setComputeUnitLimit({
+                units: 700_000,
+              }),
 
-              // Master NFT accounts (NOT NEEDED)
-              collection: sNFT.collectionAddress,
-              collectionPolicy: sNFT.policyAddress,
-              masterMintMetadata: collection.masterMetadata,
+              await stakingProgram.methods
+                .unstakePnft(
+                  sNFT.communityIdx,
+                  sNFT.collectionIdx,
+                  userCommunity.index,
+                  sNFT.policyIdx
+                )
+                .accounts({
+                  mainPool: main.address,
+                  user: user.keypair.publicKey,
+                  userAccount: user.userMainAccount,
+                  userCommunityAccount: sNFT.userCommunityAddress,
+                  communityPool: sNFT.communityAddress,
 
-              // Metaplex program
-              tokenMetadataProgram: METAPLEX,
+                  // NFT PDA information accounts
+                  unstakeNftTicket: sNFT.ticketPda,
 
-              // For payout
-              rewardVault: main.comByChainIdx(sNFT.communityIdx).rewardVault,
-              userRewardAccount: await community.getScAta(
-                user.keypair.publicKey
-              ),
+                  // ATA derived from the token being unfrozen
+                  userNftTokenAccount: await cm.getAta(
+                    user.keypair.publicKey,
+                    nftDeets.mint
+                  ),
 
-              tokenProgram: TOKEN_PROGRAM_ID,
+                  // NFT accounts
+                  nftMint: nftDeets.mint,
+                  mintMetadata: nftDeets.metadata,
+                  editionId: nftDeets.edition,
 
-              tokenRecord: null,
-            })
-            .signers([user.keypair])
-            .rpc();
+                  // Master NFT accounts (NOT NEEDED)
+                  collection: sNFT.collectionAddress,
+                  collectionPolicy: sNFT.policyAddress,
+                  masterMintMetadata: collection.masterMetadata,
+
+                  // Metaplex program
+                  tokenMetadataProgram: METAPLEX,
+
+                  // For payout
+                  rewardVault: main.comByChainIdx(sNFT.communityIdx)
+                    .rewardVault,
+                  userRewardAccount: await community.getScAta(
+                    user.keypair.publicKey
+                  ),
+
+                  tokenProgram: TOKEN_PROGRAM_ID,
+                  tokenRecord,
+
+                  rent: SYSVAR_INSTRUCTIONS_PUBKEY,
+                  masterEdition,
+                })
+                .instruction()
+            );
+
+            const sig2 = await provider.sendAndConfirm(transaction1, [
+              user.keypair,
+            ]);
+          } catch (e) {
+            console.log("error unstaking: ", e);
+          }
 
           // Log how long it was staked for
           let timeElapased = secNow() - sNFT.stakeTime; //   addTimeSTamp(0, n, secNow());

@@ -5,6 +5,8 @@ pub mod initialise_user_community_account;
 pub mod stake_nft;
 pub mod unstake_nft;
 pub mod claim_delegate;
+pub mod stake_pnft;
+pub mod unstake_pnft;
 
 pub use update_delegate::*;
 pub use claim_single::*;
@@ -14,3 +16,5 @@ pub use stake_nft::*;
 pub use unstake_nft::*;
 pub use update_delegate::*;
 pub use claim_delegate::*;
+pub use stake_pnft::*;
+pub use unstake_pnft::*;

@@ -1,18 +1,21 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{ self, Token, TokenAccount, Transfer, Revoke };
-use mpl_token_metadata::instruction::thaw_delegated_account;
-use solana_program::program::invoke_signed;
+use anchor_spl::token::{ self, Token, TokenAccount, Transfer };
+use mpl_token_metadata::instruction::{ RevokeArgs, UnlockArgs };
+use solana_program::program::{ invoke_signed, invoke };
 
 use crate::states::*;
 use crate::constants::*;
 use crate::errors::*;
 use crate::utils::*;
 
-pub fn unstake_nft<'a, 'b, 'c, 'info>(
-    ctx: Context<'a, 'b, 'c, 'info, UnstakeNftToPool<'info>>,
+use mpl_token_metadata::instruction::builders::{ Revoke, Unlock };
+use mpl_token_metadata::instruction::InstructionBuilder;
+
+pub fn unstake_pnft<'a, 'b, 'c, 'info>(
+    ctx: Context<'a, 'b, 'c, 'info, UnstakePnftToPool<'info>>,
     community_idx: u32
 ) -> Result<()> {
-    let accounts: &mut UnstakeNftToPool<'info> = ctx.accounts;
+    let accounts: &mut UnstakePnftToPool<'info> = ctx.accounts;
 
     // Check NFT details against collection PDA
     accounts.collection.collection_member(
@@ -22,7 +25,7 @@ pub fn unstake_nft<'a, 'b, 'c, 'info>(
     )?;
 
     // Recalculate bump
-    let (_, rederived_bump) = anchor_lang::prelude::Pubkey::find_program_address(
+    let (red, rederived_bump) = anchor_lang::prelude::Pubkey::find_program_address(
         &[
             COMMUNITY_SEED.as_bytes(),
             accounts.main_pool.key().as_ref(),
@@ -30,12 +33,6 @@ pub fn unstake_nft<'a, 'b, 'c, 'info>(
         ],
         &ctx.program_id
     );
-
-    // msg!("nft_mint.key(): {:?}", nft_mint.key());
-    // msg!("unstake_nft_ticket.claimed_time: {:?}", unstake_nft_ticket.claimed_time);
-    // msg!("unstake_nft_ticket.mint: {:?}", unstake_nft_ticket.mint);
-    // msg!("collection_policy.rate: {:?}", collection_policy.rate);
-    // msg!("collection_policy.min_lock_up: {:?}", collection_policy.minimum_stake_time);
 
     // Mint addres of the NFT matches the mint address stored in the NFT PDA
     require!(
@@ -53,12 +50,13 @@ pub fn unstake_nft<'a, 'b, 'c, 'info>(
         &[rederived_bump],
     ];
 
-    // Unfreeze
+    // Undelegate
     accounts.unfreeze(community_idx, rederived_bump)?;
 
-    // Undeleagate
+    // Unfreeze
     accounts.undelegate(community_idx, rederived_bump)?;
 
+    // SOL fee for unstaking
     take_fee(
         &accounts.main_pool.to_account_info(),
         &accounts.user,
@@ -175,39 +173,116 @@ pub fn unstake_nft<'a, 'b, 'c, 'info>(
     Ok(())
 }
 
-impl<'info> UnstakeNftToPool<'info> {
+impl<'info> UnstakePnftToPool<'info> {
     fn undelegate(
         &self,
         community_idx: u32,
         rederived_bump: u8
     ) -> anchor_lang::prelude::Result<()> {
+        // Create revoke args
+        let revoke_args = RevokeArgs::StakingV1;
+
+        let main_pool_key: Pubkey = self.main_pool.key();
+
+        // Seeds for thawing
+        let seeds = &[
+            COMMUNITY_SEED.as_bytes(),
+            main_pool_key.as_ref(),
+            &community_idx.to_be_bytes(),
+            &[rederived_bump],
+        ];
+
+        // Create revoke instruction
+        let revoke: Revoke = Revoke {
+            // Delegate will need to be some PDA of this program
+            delegate_record: None,
+            delegate: self.community_pool.key(),
+            metadata: self.mint_metadata.key(),
+            master_edition: Some(*self.master_edition.key),
+            token_record: Some(self.token_record.key()),
+            mint: self.nft_mint.key(),
+            token: Some(self.user_nft_token_account.key()),
+            authority: self.user.key(),
+            payer: self.user.key(),
+            system_program: self.system_program.key(),
+            authorization_rules: None,
+            authorization_rules_program: None,
+            sysvar_instructions: self.rent.key(),
+            spl_token_program: Some(self.token_program.key()),
+            args: revoke_args,
+        };
+
+        // Invoke signed
+        invoke_signed(
+            &revoke.instruction(),
+            &[
+                self.community_pool.to_account_info().clone(), // Delegate
+                self.mint_metadata.to_account_info().clone(), // Metadata
+                self.master_edition.to_account_info().clone(), //
+                self.token_record.to_account_info().clone(),
+                self.nft_mint.to_account_info().clone(), // Nft mint
+                self.user_nft_token_account.to_account_info().clone(), // Token account
+                self.user.to_account_info().clone(), // Authority / Delegate
+                self.user.to_account_info().clone(), // Payer
+                self.system_program.to_account_info().clone(),
+                self.rent.to_account_info().clone(),
+                self.token_program.to_account_info().clone(),
+            ],
+            &[seeds]
+        )?;
         Ok(())
     }
 
     fn unfreeze(&self, community_idx: u32, rederived_bump: u8) -> anchor_lang::prelude::Result<()> {
+        let undelegate_args: UnlockArgs = UnlockArgs::V1 { authorization_data: None };
+
+        let main_pool_key: Pubkey = self.main_pool.key();
+
+        // Seeds for thawing
+        let seeds = &[
+            COMMUNITY_SEED.as_bytes(),
+            main_pool_key.as_ref(),
+            &community_idx.to_be_bytes(),
+            &[rederived_bump],
+        ];
+
+        msg!("Seeds in unstake PNFT {:?}", seeds);
+
+        let unlock_ix: Unlock = Unlock {
+            authority: self.community_pool.key(),
+            token_owner: Some(self.user.to_account_info().key()),
+            token: self.user_nft_token_account.key(),
+            mint: self.nft_mint.key(),
+            metadata: self.mint_metadata.key(),
+            edition: Some(self.edition_id.key()),
+            token_record: Some(self.token_record.key()),
+            payer: self.user.key(),
+            system_program: self.system_program.key(),
+            sysvar_instructions: self.rent.key(),
+            spl_token_program: Some(self.token_program.key()),
+            authorization_rules_program: None,
+            authorization_rules: None,
+            args: undelegate_args,
+        };
+
         invoke_signed(
-            &thaw_delegated_account(
-                self.token_metadata_program.key(),
-                self.community_pool.key(),
-                self.user_nft_token_account.key(),
-                self.edition_id.key(),
-                self.nft_mint.key()
-            ),
+            &unlock_ix.instruction(),
             &[
-                self.community_pool.to_account_info(),
-                self.user_nft_token_account.to_account_info(),
-                self.edition_id.to_account_info(),
-                self.nft_mint.to_account_info(),
+                self.community_pool.to_account_info(), // Authority
+                self.user.to_account_info(), // Token owner
+                self.user_nft_token_account.to_account_info(), // Token account
+                self.nft_mint.to_account_info(), // Mint
+                self.mint_metadata.to_account_info(), // Metadata
+                self.edition_id.to_account_info(), // Edition
+                self.token_record.to_account_info(), // Token record
+                self.user.to_account_info(), // Payer
+                self.system_program.to_account_info(), // System program
+                self.rent.to_account_info(), // Sysvar instructions
+                self.token_program.to_account_info(), // SPL Token Program
             ],
-            &[
-                &[
-                    COMMUNITY_SEED.as_bytes(),
-                    self.main_pool.key().as_ref(),
-                    &community_idx.to_be_bytes(),
-                    &[rederived_bump],
-                ],
-            ]
+            &[seeds]
         )?;
+
         Ok(())
     }
 }
@@ -219,7 +294,7 @@ impl<'info> UnstakeNftToPool<'info> {
     community_account: u32, 
     policy_idx: u32, 
 )]
-pub struct UnstakeNftToPool<'info> {
+pub struct UnstakePnftToPool<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
@@ -334,9 +409,19 @@ pub struct UnstakeNftToPool<'info> {
     #[account(constraint = token_metadata_program.key == &metaplex_token_metadata::ID)]
     pub token_metadata_program: AccountInfo<'info>,
 
+    pub token_program: Program<'info, Token>,
+
     /// CHECK: This is not dangerous because we don't read or write from this account
     pub edition_id: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
-    pub token_program: Program<'info, Token>,
+    /// CHECK: Checks performed by the token metadata program
+    pub rent: AccountInfo<'info>,
+
+    /// CHECK: Checks performed by the token metadata program
+    #[account(mut)]
+    pub token_record: AccountInfo<'info>,
+
+    /// CHECK: Checks performed by the token metadata program
+    #[account(mut)]
+    pub master_edition: AccountInfo<'info>,
 }

@@ -3,6 +3,7 @@ use anchor_spl::token::{ self, Approve, Token, TokenAccount };
 use mpl_token_metadata::instruction::freeze_delegated_account;
 use solana_program::program::invoke_signed;
 
+use crate::accounts;
 use crate::states::*;
 use crate::constants::*;
 use crate::errors::*;
@@ -11,107 +12,115 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
     ctx: Context<'a, 'b, 'c, 'info, StakeNftToPool<'info>>,
     community_idx: u32
 ) -> Result<()> {
-    let collection: &mut Account<'_, Collection> = &mut ctx.accounts.collection;
-    let collection_policy: &mut Account<'_, CollectionPolicy> = &mut ctx.accounts.collection_policy;
-    let mint_metadata: &mut &AccountInfo<'_> = &mut &ctx.accounts.mint_metadata;
-    let master_mint_metadata: &mut &AccountInfo<'_> = &mut &ctx.accounts.master_mint_metadata;
-    let community_pool: &mut Box<Account<'_, CommunityPool>> = &mut ctx.accounts.community_pool;
-    let main_pool: &mut Account<'_, MainPool> = &mut ctx.accounts.main_pool;
-    let nft_ticket: &mut Box<Account<'_, NftTicket>> = &mut ctx.accounts.nft_ticket;
-    let user_account: &mut Box<Account<'_, UserAccount>> = &mut ctx.accounts.user_account;
-    let user_community_account: &mut Box<
-        Account<'_, UserCommunityAccount>
-    > = &mut ctx.accounts.user_community_account;
-    let nft_mint: &mut AccountInfo<'_> = &mut ctx.accounts.nft_mint;
-    let metadata_program: &AccountInfo<'_> = &ctx.accounts.token_metadata_program;
-    let edition_info: &AccountInfo<'_> = &ctx.accounts.edition_id;
+    let accounts: &mut StakeNftToPool<'info> = ctx.accounts;
 
     // Check NFT details against provided collection PDA
-    collection.collection_member(mint_metadata, master_mint_metadata, &nft_mint.key())?;
-
-    // Delegate as owner authority to the community pool PDA
-    let cpi_accounts: Approve<'_> = Approve {
-        to: ctx.accounts.user_nft_token_account.to_account_info(),
-        delegate: community_pool.to_account_info(),
-        authority: ctx.accounts.user.to_account_info(),
-    };
-    let cpi_program: AccountInfo<'_> = ctx.accounts.token_program.to_account_info();
-    let cpi_context: CpiContext<'_, '_, '_, '_, Approve<'_>> = CpiContext::new(
-        cpi_program,
-        cpi_accounts
-    );
-    token::approve(cpi_context, 1)?;
+    accounts.collection.collection_member(
+        &&accounts.mint_metadata,
+        &&accounts.master_mint_metadata,
+        &accounts.nft_mint.key()
+    )?;
 
     // Recalculate bump for signing
     let (_, rederived_bump) = anchor_lang::prelude::Pubkey::find_program_address(
-        &[COMMUNITY_SEED.as_bytes(), main_pool.key().as_ref(), &community_idx.to_be_bytes()],
+        &[
+            COMMUNITY_SEED.as_bytes(),
+            accounts.main_pool.key().as_ref(),
+            &community_idx.to_be_bytes(),
+        ],
         &ctx.program_id
     );
 
-    let main_pool_key: Pubkey = main_pool.key();
+    msg!("edition_info.key(): {:?}", accounts.edition_id.key());
 
-    // Seeds for freezing
-    let seeds = &[
-        COMMUNITY_SEED.as_bytes(),
-        main_pool_key.as_ref(),
-        &community_idx.to_be_bytes(),
-        &[rederived_bump],
-    ];
+    // Deelgate the NFT to the community pool
+    accounts.delegate(community_idx, rederived_bump)?;
 
-    msg!("edition_info.key(): {:?}", edition_info.key());
+    // Freeze tye token account that ahs this nft
+    accounts.freeze(community_idx, rederived_bump)?;
 
     // Get users NFT amount
-    let current_nft_balance = ctx.accounts.user_nft_token_account.amount as f64;
-    let sub_owner = ctx.accounts.user_nft_token_account.owner;
+    let current_nft_balance: f64 = accounts.user_nft_token_account.amount as f64;
+    let sub_owner: Pubkey = accounts.user_nft_token_account.owner;
 
     msg!("currentNftBalance {:?} owned by {:?}", current_nft_balance, sub_owner);
-    msg!("user calling {:?}", ctx.accounts.user.key());
-
-    // Freeze delegated account
-    invoke_signed(
-        &freeze_delegated_account(
-            *metadata_program.key,
-            community_pool.key(),
-            ctx.accounts.user_nft_token_account.key(),
-            *edition_info.key,
-            nft_mint.key()
-        ),
-        &[
-            community_pool.to_account_info().clone(),
-            ctx.accounts.user_nft_token_account.to_account_info(),
-            edition_info.to_account_info(),
-            nft_mint.to_account_info(),
-        ],
-        &[seeds]
-    )?;
+    msg!("user calling {:?}", accounts.user.key());
 
     // Set stake time and payout rate
     msg!("Settign NFT details ");
-    nft_ticket.stake_time = Clock::get().unwrap().unix_timestamp;
+    accounts.nft_ticket.stake_time = Clock::get().unwrap().unix_timestamp;
     require!(
-        collection_policy.within_time_cap(nft_ticket.stake_time),
+        accounts.collection_policy.within_time_cap(accounts.nft_ticket.stake_time),
         StakingError::TimeCapExceeded
     );
 
     // So that the first clai is not from the 1970s
-    nft_ticket.claimed_time = nft_ticket.stake_time;
-    nft_ticket.mint = nft_mint.key();
+    accounts.nft_ticket.claimed_time = accounts.nft_ticket.stake_time;
+    accounts.nft_ticket.mint = accounts.nft_mint.key();
 
     // Set address of the policy
-    nft_ticket.policy = collection_policy.key();
+    accounts.nft_ticket.policy = accounts.collection_policy.key();
 
     // Increment staked NFTs per community and per collection
-    community_pool.total_staked_count += 1;
+    accounts.community_pool.total_staked_count += 1;
     if community_idx != 0 {
-        collection.total_staked += 1;
+        accounts.collection.total_staked += 1;
     }
 
-    msg!("collection.total_staked: in stake : {:?}", collection.total_staked);
+    msg!("collection.total_staked: in stake : {:?}", accounts.collection.total_staked);
     // Increment user active stakings counters
-    user_community_account.stake_counter += 1;
-    user_account.total_staked += 1;
+    accounts.user_community_account.stake_counter += 1;
+    accounts.user_account.total_staked += 1;
 
     Ok(())
+}
+
+impl<'info> StakeNftToPool<'info> {
+    fn delegate(&self, community_idx: u32, rederived_bump: u8) -> anchor_lang::prelude::Result<()> {
+        // Delegate as owner authority to the community pool PDA
+        let cpi_accounts: Approve<'_> = Approve {
+            to: self.user_nft_token_account.to_account_info(),
+            delegate: self.community_pool.to_account_info(),
+            authority: self.user.to_account_info(),
+        };
+        let cpi_program: AccountInfo<'_> = self.token_program.to_account_info();
+        let cpi_context: CpiContext<'_, '_, '_, '_, Approve<'_>> = CpiContext::new(
+            cpi_program,
+            cpi_accounts
+        );
+        token::approve(cpi_context, 1)?;
+        Ok(())
+    }
+
+    fn freeze(&self, community_idx: u32, rederived_bump: u8) -> anchor_lang::prelude::Result<()> {
+        let main_pool_key: Pubkey = self.main_pool.key();
+
+        // Seeds for freezing
+        let seeds = &[
+            COMMUNITY_SEED.as_bytes(),
+            main_pool_key.as_ref(),
+            &community_idx.to_be_bytes(),
+            &[rederived_bump],
+        ];
+        // Freeze delegated account
+        invoke_signed(
+            &freeze_delegated_account(
+                *self.token_metadata_program.key,
+                self.community_pool.key(),
+                self.user_nft_token_account.key(),
+                *self.edition_id.key,
+                self.nft_mint.key()
+            ),
+            &[
+                self.community_pool.to_account_info().clone(),
+                self.user_nft_token_account.to_account_info(),
+                self.edition_id.to_account_info(),
+                self.nft_mint.to_account_info(),
+            ],
+            &[seeds]
+        )?;
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]

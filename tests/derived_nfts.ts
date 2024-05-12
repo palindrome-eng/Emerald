@@ -5,36 +5,19 @@ import {
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import { METAPLEX } from "./consts";
-import { BN } from "bn.js";
-import path from "path";
-import fs from "fs";
-import * as anchor from "@project-serum/anchor";
-import {
-  keypairIdentity,
-  KeypairIdentityDriver,
-  Metaplex,
-  toBigNumber,
-  token,
-  TransferNftInput,
-  walletAdapterIdentity,
-} from "@metaplex-foundation/js";
-
-import {
-  createMint,
-  createAccount,
-  getAccount,
-  getOrCreateAssociatedTokenAccount,
-  createAssociatedTokenAccountInstruction,
-  getAssociatedTokenAddress,
-  createInitializeMintInstruction,
-  transfer,
-  Account,
-  mintTo,
-  TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-} from "@solana/spl-token";
+import { Metaplex, token } from "@metaplex-foundation/js";
+import { TokenStandard } from "@metaplex-foundation/mpl-token-metadata";
+import { getOrCreateAssociatedTokenAccount } from "@solana/spl-token";
 
 // import { getBalance } from "./helper";
+
+export interface CollectionInit {
+  uri: string;
+  keypair?: Keypair;
+  name?: string;
+  symbol?: string;
+  pnft?: boolean;
+}
 
 export class NftMint1 {
   constructor(
@@ -55,19 +38,21 @@ export class NftMint1 {
   }
 
   async transferFromMinter(ownerNew: PublicKey) {
-    // get ATAs
-    let newOwnerAta = await this.getAta(ownerNew);
-    let currentOwnerAta = await this.getAta(this.owner);
+    const nft = await this.parent.parent.metaplex
+      .nfts()
+      .findByMint({ mintAddress: this.mint });
 
-    await transfer(
-      this.parent.parent.connection,
-      this.parent.parent.payer,
-      currentOwnerAta,
-      newOwnerAta,
-      this.owner,
-      1,
-      [this.parent.parent.payer]
-    );
+    let george = await this.parent.parent.metaplex
+      .nfts()
+      .builders()
+      .transfer({
+        nftOrSft: nft,
+        fromOwner: this.owner,
+        toOwner: ownerNew,
+        amount: token(1),
+        authority: this.parent.parent.payer,
+      })
+      .sendAndConfirm(this.parent.parent.metaplex);
 
     // Update owner
     this.owner = ownerNew;
@@ -112,6 +97,10 @@ export class NftMint0 {
       updateAuthority: keypair,
       collection,
       collectionAuthority: keypair,
+      tokenStandard: this.parent.pNFT
+        ? TokenStandard.ProgrammableNonFungible
+        : null,
+      ruleSet: null,
     });
 
     this.addNFTMint(mintNFTResponse.mintAddress, keypair.publicKey);
@@ -138,6 +127,7 @@ export class NftMint0 {
 
 export class CollectionsMaster {
   collections: NftMint0[] = [];
+  pNFT: boolean = false;
 
   constructor(
     public connection: Connection,
@@ -171,25 +161,47 @@ export class CollectionsMaster {
     return [startingBalanceSOL, lamports];
   }
 
-  async initializeCollection(
-    uri: string,
-    keypair: Keypair = this.payer,
-    name: string = "The Anon club",
-    symbol: string = "ANON"
-  ) {
-    //
-    console.log("Collection auth: ", keypair.publicKey.toBase58());
-    const mintNFTResponse = await this.metaplex.nfts().create({
+  async initializeCollection(ci: CollectionInit) {
+    const {
       uri,
-      name,
-      primarySaleHappened: false,
-      isMutable: true,
-      sellerFeeBasisPoints: 500,
-      symbol,
-      updateAuthority: keypair,
-      isCollection: true,
-      collectionIsSized: true,
-    });
+      keypair = this.payer,
+      name = "The Anon club",
+      symbol = "ANON",
+      pnft = false,
+    } = ci;
+    //
+    // console.log("Collection auth: ", ci.keypair.publicKey.toBase58());
+    let mintNFTResponse;
+
+    if (pnft) {
+      mintNFTResponse = await this.metaplex.nfts().create({
+        uri,
+        name,
+        primarySaleHappened: false,
+        isMutable: true,
+        sellerFeeBasisPoints: 500,
+        symbol,
+        updateAuthority: keypair,
+        isCollection: true,
+        collectionIsSized: true,
+        ruleSet: null,
+      });
+
+      this.pNFT = true;
+    } else {
+      mintNFTResponse = await this.metaplex.nfts().create({
+        uri,
+        name,
+        primarySaleHappened: false,
+        isMutable: true,
+        sellerFeeBasisPoints: 500,
+        symbol,
+        updateAuthority: keypair,
+        isCollection: true,
+        collectionIsSized: true,
+      });
+      this.pNFT = false;
+    }
 
     // metaplex.use(keypairIdentity(<keypair>))
 
