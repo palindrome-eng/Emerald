@@ -183,15 +183,15 @@ pub mod emerald {
         claim_single::claim(ctx, community_idx)
     }
 
-    // pub fn unstake_pnft<'a, 'b, 'c, 'info>(
-    //     ctx: Context<'a, 'b, 'c, 'info, UnstakePnftToPool<'info>>,
-    //     community_idx: u32,
-    //     _collection_idx: u32,
-    //     _community_account: u32,
-    //     _policy_idx: u32
-    // ) -> Result<()> {
-    //     unstake_pnft::unstake_pnft(ctx, community_idx)
-    // }
+    pub fn unstake_pnft<'a, 'b, 'c, 'info>(
+        ctx: Context<'a, 'b, 'c, 'info, UnstakePnftToPool<'info>>,
+        community_idx: u32,
+        _collection_idx: u32,
+        _community_account: u32,
+        _policy_idx: u32
+    ) -> Result<()> {
+        unstake_pnft::unstake_pnft(ctx, community_idx)
+    }
 
     pub fn update_delegate<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, UpdateDelegate<'info>>,

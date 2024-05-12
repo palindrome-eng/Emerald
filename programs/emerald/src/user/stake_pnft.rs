@@ -85,10 +85,10 @@ impl<'info> StakePnftToPool<'info> {
 
         let delegate_instruction: Delegate = Delegate {
             delegate_record: None,
-            delegate: self.community_pool.clone().key(),
+            delegate: self.community_pool.key(),
             metadata: self.mint_metadata.key(), // Assuming 'metadata' is associated with mint_metadata
             master_edition: Some(self.master_edition.key()), // Assuming there is no master edition in this context
-            token_record: Some(self.token_record.clone().key()), // Optional, using token_record's pubkey
+            token_record: Some(self.token_record.key()), // Optional, using token_record's pubkey
             mint: self.nft_mint.key(), // Using the nft_mint pubkey
             token: Some(self.user_nft_token_account.key()), // If there is a specific token to be delegated, provide its account key
             authority: self.user.key(), // Using user's pubkey as authority
@@ -107,10 +107,10 @@ impl<'info> StakePnftToPool<'info> {
         invoke(
             &ix, // Use the instruction created from the Delegate struct
             &[
-                self.community_pool.clone().to_account_info(), // delegate
+                self.community_pool.to_account_info(), // delegate
                 self.mint_metadata.to_account_info(), // metadata
                 self.master_edition.to_account_info(), // master_edition
-                self.token_record.clone().to_account_info(), // token_record
+                self.token_record.to_account_info(), // token_record
                 self.nft_mint.to_account_info(), // mint
                 self.user_nft_token_account.to_account_info(), // token
                 self.user.to_account_info(), // authority
@@ -130,7 +130,7 @@ impl<'info> StakePnftToPool<'info> {
 
         // Create lock instructions
         let lock_instruction: Lock = Lock {
-            authority: self.community_pool.key(), // Using user's pubkey as authority
+            authority: self.community_pool.key(), // delegate
             token_owner: Some(self.user.key()), // Using user's pubkey as token_owner
             token: self.user_nft_token_account.key(),
             mint: self.nft_mint.key(), // mint
@@ -146,11 +146,22 @@ impl<'info> StakePnftToPool<'info> {
             args: lock_args,
         };
 
+        let main_pool_key: Pubkey = self.main_pool.key();
+
+        let seeds = &[
+            COMMUNITY_SEED.as_bytes(),
+            main_pool_key.as_ref(),
+            &community_idx.to_be_bytes(),
+            &[rederived_bump],
+        ];
+
+        msg!("Seeds in stake PNFT {:?}", seeds);
+
         // Invoke signed
         invoke_signed(
             &lock_instruction.instruction(), // Use the instruction created from the Lock struct
             &[
-                self.community_pool.to_account_info(), // metadata
+                self.community_pool.to_account_info(), // delegate authority
                 self.user.clone().to_account_info(), // token owner
                 self.user_nft_token_account.to_account_info(), // token acciunt
                 self.nft_mint.to_account_info(), // mint

@@ -15,10 +15,10 @@ wallet = "~/.config/solana/id.json"
 # Metaplex
 [[test.genesis]]
 address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
-program = "./token_metadata.so"
+program = "./metaplex_token_metadata_program.so"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 5000000 tests/staking-pnft.ts"
+test = "yarn run ts-mocha -p ./tsconfig.json -t 5000000 tests/staking.ts"
 init = "yarn run ts-node scripts/init.ts"
 community = "yarn run ts-node scripts/community.ts"
 collection = "yarn run ts-node scripts/collection.ts"

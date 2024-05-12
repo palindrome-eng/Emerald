@@ -1,11 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{ self, Token, TokenAccount, Transfer };
-use mpl_token_metadata::instruction::{
-    thaw_delegated_account,
-    approve_use_authority,
-    RevokeArgs,
-    UnlockArgs,
-};
+use anchor_spl::token::{ self, Token, TokenAccount, Transfer, Revoke };
+use mpl_token_metadata::instruction::thaw_delegated_account;
 use solana_program::program::invoke_signed;
 
 use crate::states::*;
@@ -13,37 +8,28 @@ use crate::constants::*;
 use crate::errors::*;
 use crate::utils::*;
 
-use mpl_token_metadata::instruction::builders::{ Revoke, Unlock };
-use mpl_token_metadata::instruction::InstructionBuilder;
-
 pub fn unstake_nft<'a, 'b, 'c, 'info>(
     ctx: Context<'a, 'b, 'c, 'info, UnstakeNftToPool<'info>>,
     community_idx: u32
 ) -> Result<()> {
-    let collection: &mut Account<'_, Collection> = &mut ctx.accounts.collection;
-    let collection_policy: &mut Account<'_, CollectionPolicy> = &mut ctx.accounts.collection_policy;
-    let mint_metadata: &mut &AccountInfo<'_> = &mut &ctx.accounts.mint_metadata;
-    let master_mint_metadata: &mut &AccountInfo<'_> = &mut &ctx.accounts.master_mint_metadata;
-    let community_pool: &mut Box<Account<'_, CommunityPool>> = &mut ctx.accounts.community_pool;
-    let main_pool: &mut Account<'_, MainPool> = &mut ctx.accounts.main_pool;
-    let unstake_nft_ticket: &mut Box<Account<'_, NftTicket>> = &mut ctx.accounts.unstake_nft_ticket;
-    let user_account: &mut Box<Account<'_, UserAccount>> = &mut ctx.accounts.user_account;
-    let user_community_account: &mut Box<
-        Account<'_, UserCommunityAccount>
-    > = &mut ctx.accounts.user_community_account;
-    let nft_mint = &mut ctx.accounts.nft_mint;
-    let reward_vault: &mut Box<Account<'_, TokenAccount>> = &mut ctx.accounts.reward_vault;
-    let token_record: &mut Option<AccountInfo<'_>> = &mut ctx.accounts.token_record;
+    let accounts: &mut UnstakeNftToPool<'info> = ctx.accounts;
 
     // Check NFT details against collection PDA
-    collection.collection_member(mint_metadata, master_mint_metadata, &nft_mint.key())?;
+    accounts.collection.collection_member(
+        &&accounts.mint_metadata,
+        &&accounts.master_mint_metadata,
+        &accounts.nft_mint.key()
+    )?;
 
     // Recalculate bump
     let (_, rederived_bump) = anchor_lang::prelude::Pubkey::find_program_address(
-        &[COMMUNITY_SEED.as_bytes(), main_pool.key().as_ref(), &community_idx.to_be_bytes()],
+        &[
+            COMMUNITY_SEED.as_bytes(),
+            accounts.main_pool.key().as_ref(),
+            &community_idx.to_be_bytes(),
+        ],
         &ctx.program_id
     );
-    let main_pool_key: Pubkey = main_pool.key();
 
     // msg!("nft_mint.key(): {:?}", nft_mint.key());
     // msg!("unstake_nft_ticket.claimed_time: {:?}", unstake_nft_ticket.claimed_time);
@@ -52,7 +38,12 @@ pub fn unstake_nft<'a, 'b, 'c, 'info>(
     // msg!("collection_policy.min_lock_up: {:?}", collection_policy.minimum_stake_time);
 
     // Mint addres of the NFT matches the mint address stored in the NFT PDA
-    require!(nft_mint.key() == unstake_nft_ticket.mint, StakingError::NftTicketMismatch);
+    require!(
+        accounts.nft_mint.key() == accounts.unstake_nft_ticket.mint,
+        StakingError::NftTicketMismatch
+    );
+
+    let main_pool_key: Pubkey = accounts.main_pool.key();
 
     // Seeds for thawing
     let seeds = &[
@@ -62,91 +53,17 @@ pub fn unstake_nft<'a, 'b, 'c, 'info>(
         &[rederived_bump],
     ];
 
-    // SOL fee for unstaking
-    let ix = anchor_lang::solana_program::system_instruction::transfer(
-        &ctx.accounts.user.key(),
-        &main_pool.key(),
-        main_pool.unstake_fee
-    );
-    anchor_lang::solana_program::program::invoke(
-        &ix,
-        &[ctx.accounts.user.to_account_info(), main_pool.to_account_info()]
-    )?;
+    // Unfreeze
+    accounts.unfreeze(community_idx, rederived_bump)?;
 
-    let metadata_program: &AccountInfo<'_> = &ctx.accounts.token_metadata_program;
-    let edition_info: &AccountInfo<'_> = &ctx.accounts.edition_id;
-
-    // Deal with possible states of optional account using match
-    match token_record {
-        Some(token_record) => {
-            // Create revoke args
-            let revoke_args = RevokeArgs::LockedTransferV1;
-
-            // Create revoke instruction
-            let revoke: Revoke = Revoke {
-                // Delegate will need to be some PDA of this program
-                delegate: token_record.key(),
-                delegate_record: Some(token_record.key()),
-                token_record: Some(token_record.key()),
-                metadata: *metadata_program.key,
-                master_edition: Some(*edition_info.key),
-                mint: *nft_mint.key,
-                token: None,
-                authority: *ctx.accounts.user.key,
-                payer: *ctx.accounts.user.key,
-                system_program: *ctx.accounts.system_program.key,
-                authorization_rules: None,
-                authorization_rules_program: None,
-                sysvar_instructions: ctx.accounts.rent.key(),
-                spl_token_program: Some(ctx.accounts.token_program.key()),
-                args: revoke_args,
-            };
-
-            // Invoke signed
-            invoke_signed(
-                &revoke.instruction(),
-                &[
-                    token_record.to_account_info().clone(),
-                    ctx.accounts.user.to_account_info().clone(),
-                    ctx.accounts.user.to_account_info().clone(),
-                    ctx.accounts.user.to_account_info().clone(),
-                    token_record.to_account_info().clone(),
-                    ctx.accounts.nft_mint.to_account_info().clone(),
-                    ctx.accounts.user.to_account_info().clone(),
-                    ctx.accounts.user.to_account_info().clone(),
-                    ctx.accounts.system_program.to_account_info().clone(),
-                    ctx.accounts.rent.to_account_info().clone(),
-                    ctx.accounts.token_program.to_account_info().clone(),
-                    ctx.accounts.token_metadata_program.to_account_info().clone(),
-                ],
-                &[seeds]
-            )?;
-        }
-        None => {
-            invoke_signed(
-                &thaw_delegated_account(
-                    *metadata_program.key,
-                    community_pool.key(),
-                    ctx.accounts.user_nft_token_account.key(),
-                    *edition_info.key,
-                    ctx.accounts.nft_mint.key()
-                ),
-                &[
-                    community_pool.to_account_info().clone(),
-                    ctx.accounts.user_nft_token_account.to_account_info(),
-                    edition_info.to_account_info(),
-                    ctx.accounts.nft_mint.to_account_info(),
-                ],
-                &[seeds]
-            )?;
-        }
-    }
+    // Undeleagate
+    accounts.undelegate(community_idx, rederived_bump)?;
 
     take_fee(
-        &main_pool.to_account_info(),
-        &ctx.accounts.user,
-        main_pool.unstake_fee,
-        community_pool.fee_reduction
+        &accounts.main_pool.to_account_info(),
+        &accounts.user,
+        accounts.main_pool.unstake_fee,
+        accounts.community_pool.fee_reduction
     )?;
 
     // Ensure NFT has been locked up for the minnimum amount of time
@@ -155,98 +72,144 @@ pub fn unstake_nft<'a, 'b, 'c, 'info>(
     msg!("time_now:     {:?}", time_now);
     msg!(
         "withdraw time:{:?}",
-        unstake_nft_ticket.stake_time + collection_policy.minimum_stake_time
+        accounts.unstake_nft_ticket.stake_time + accounts.collection_policy.minimum_stake_time
     );
 
     // Staked for at least the ,ommimum amount of time
     require!(
-        collection_policy.exceeded_min_lockup(time_now, unstake_nft_ticket.stake_time),
+        accounts.collection_policy.exceeded_min_lockup(
+            time_now,
+            accounts.unstake_nft_ticket.stake_time
+        ),
         StakingError::NotStakedLongEnough
     );
 
     // Calculate payemnt
-    let mut reward: u64 = collection_policy
+    let mut reward: u64 = accounts.collection_policy
         .calculate_reward(
             &time_now,
-            &unstake_nft_ticket.claimed_time,
-            &community_pool.coin_decimals
+            &accounts.unstake_nft_ticket.claimed_time,
+            &accounts.community_pool.coin_decimals
         )
         .unwrap();
 
     msg!(
         "Reward: {:?} for staking for {:?}s at a rate of {:?} per {:?}seconds",
         reward,
-        &time_now - &unstake_nft_ticket.claimed_time,
-        collection_policy.rate,
-        collection_policy.epoch
+        &time_now - &accounts.unstake_nft_ticket.claimed_time,
+        accounts.collection_policy.rate,
+        accounts.collection_policy.epoch
     );
 
     // Scale back based on attenuation and claim window
     if
-        collection_policy.attenuation != 1000 &&
-        collection_policy.exceeded_interaction_threshold(time_now, unstake_nft_ticket.claimed_time)
+        accounts.collection_policy.attenuation != 1000 &&
+        accounts.collection_policy.exceeded_interaction_threshold(
+            time_now,
+            accounts.unstake_nft_ticket.claimed_time
+        )
     {
-        reward = collection_policy.calculate_scaled_reward(&reward)?;
+        reward = accounts.collection_policy.calculate_scaled_reward(&reward)?;
     }
 
     msg!("Attention scaled reward: {:?}", reward);
     msg!(
         "Normalised final reward: {:?}",
-        reward / (10u64).pow(community_pool.coin_decimals as u32)
+        reward / (10u64).pow(accounts.community_pool.coin_decimals as u32)
     );
 
-    msg!("Vault balance        : {:?}", reward_vault.amount);
+    msg!("Vault balance        : {:?}", accounts.reward_vault.amount);
 
     // If nothing left in the vault, will allow to withdraw the NFT
-    if reward_vault.amount > 0 {
+    if accounts.reward_vault.amount > 0 {
         // If less left than the staking reward, withdraw whatever is left
-        if reward > reward_vault.amount {
+        if reward > accounts.reward_vault.amount {
             msg!("Reward is greater than vault amount, withdrawing vault amount");
-            reward = reward_vault.amount;
+            reward = accounts.reward_vault.amount;
         }
 
-        user_community_account.accumulated_reward += reward;
+        accounts.user_community_account.accumulated_reward += reward;
 
         msg!("\nCalculated token reward: {}", reward);
         let signer = &[&seeds[..]];
         let cpi_accounts = Transfer {
-            from: reward_vault.to_account_info(),
-            to: ctx.accounts.user_reward_account.to_account_info(),
-            authority: community_pool.to_account_info(),
+            from: accounts.reward_vault.to_account_info(),
+            to: accounts.user_reward_account.to_account_info(),
+            authority: accounts.community_pool.to_account_info(),
         };
 
         token::transfer(
             CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info().clone(),
+                accounts.token_program.to_account_info().clone(),
                 cpi_accounts,
                 signer
             ),
             reward
         )?;
     }
-    msg!("collection.total_staked: {:?}", collection.total_staked);
-    msg!("community_pool.total_staked_count: {:?}", community_pool.total_staked_count);
-    msg!("user_community_account.stake_counter: {:?}", user_community_account.stake_counter);
-    msg!("user_account.total_staked {:?}", user_account.total_staked);
+    msg!("collection.total_staked: {:?}", accounts.collection.total_staked);
+    msg!("community_pool.total_staked_count: {:?}", accounts.community_pool.total_staked_count);
+    msg!(
+        "user_community_account.stake_counter: {:?}",
+        accounts.user_community_account.stake_counter
+    );
+    msg!("user_account.total_staked {:?}", accounts.user_account.total_staked);
 
     // Decrement staked NFTs per community and per collection
-    community_pool.total_staked_count -= 1;
+    accounts.community_pool.total_staked_count -= 1;
 
     if community_idx != 0 {
-        collection.total_staked -= 1;
+        accounts.collection.total_staked -= 1;
     }
 
     // Decrement user active stakings counter
-    user_community_account.stake_counter -= 1;
-    user_account.total_staked -= 1;
+    accounts.user_community_account.stake_counter -= 1;
+    accounts.user_account.total_staked -= 1;
 
     // Add total earned per community for the user
-    user_community_account.accumulated_reward += reward;
+    accounts.user_community_account.accumulated_reward += reward;
 
     // Update claim time
-    unstake_nft_ticket.claimed_time = time_now;
+    accounts.unstake_nft_ticket.claimed_time = time_now;
 
     Ok(())
+}
+
+impl<'info> UnstakeNftToPool<'info> {
+    fn undelegate(
+        &self,
+        community_idx: u32,
+        rederived_bump: u8
+    ) -> anchor_lang::prelude::Result<()> {
+        Ok(())
+    }
+
+    fn unfreeze(&self, community_idx: u32, rederived_bump: u8) -> anchor_lang::prelude::Result<()> {
+        invoke_signed(
+            &thaw_delegated_account(
+                self.token_metadata_program.key(),
+                self.community_pool.key(),
+                self.user_nft_token_account.key(),
+                self.edition_id.key(),
+                self.nft_mint.key()
+            ),
+            &[
+                self.community_pool.to_account_info(),
+                self.user_nft_token_account.to_account_info(),
+                self.edition_id.to_account_info(),
+                self.nft_mint.to_account_info(),
+            ],
+            &[
+                &[
+                    COMMUNITY_SEED.as_bytes(),
+                    self.main_pool.key().as_ref(),
+                    &community_idx.to_be_bytes(),
+                    &[rederived_bump],
+                ],
+            ]
+        )?;
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -376,7 +339,4 @@ pub struct UnstakeNftToPool<'info> {
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
     pub token_program: Program<'info, Token>,
-
-    #[account(mut)]
-    pub token_record: Option<AccountInfo<'info>>,
 }

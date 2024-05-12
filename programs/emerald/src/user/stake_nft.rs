@@ -36,6 +36,9 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
     // Deelgate the NFT to the community pool
     accounts.delegate(community_idx, rederived_bump)?;
 
+    // Freeze tye token account that ahs this nft
+    accounts.freeze(community_idx, rederived_bump)?;
+
     // Get users NFT amount
     let current_nft_balance: f64 = accounts.user_nft_token_account.amount as f64;
     let sub_owner: Pubkey = accounts.user_nft_token_account.owner;

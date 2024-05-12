@@ -5,34 +5,9 @@ import {
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import { METAPLEX } from "./consts";
-import { BN } from "bn.js";
-import path from "path";
-import fs from "fs";
-import * as anchor from "@project-serum/anchor";
-import {
-  keypairIdentity,
-  KeypairIdentityDriver,
-  Metaplex,
-  toBigNumber,
-  token,
-  TransferNftInput,
-  walletAdapterIdentity,
-} from "@metaplex-foundation/js";
+import { Metaplex, token } from "@metaplex-foundation/js";
 import { TokenStandard } from "@metaplex-foundation/mpl-token-metadata";
-import {
-  createMint,
-  createAccount,
-  getAccount,
-  getOrCreateAssociatedTokenAccount,
-  createAssociatedTokenAccountInstruction,
-  getAssociatedTokenAddress,
-  createInitializeMintInstruction,
-  transfer,
-  Account,
-  mintTo,
-  TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-} from "@solana/spl-token";
+import { getOrCreateAssociatedTokenAccount } from "@solana/spl-token";
 
 // import { getBalance } from "./helper";
 
@@ -63,19 +38,9 @@ export class NftMint1 {
   }
 
   async transferFromMinter(ownerNew: PublicKey) {
-    // get ATAs
-    let newOwnerAta = await this.getAta(ownerNew);
-    let currentOwnerAta = await this.getAta(this.owner);
-
-    // try {
     const nft = await this.parent.parent.metaplex
       .nfts()
       .findByMint({ mintAddress: this.mint });
-
-    console.log("Found nft");
-
-    // Log NFT token account balance
-    // let balanceStart = await g;/
 
     let george = await this.parent.parent.metaplex
       .nfts()
@@ -137,21 +102,6 @@ export class NftMint0 {
         : null,
       ruleSet: null,
     });
-    // } else {
-    //   console.log("This is not a PNFT");
-    //   mintNFTResponse = await this.parent.metaplex.nfts().create({
-    //     uri,
-    //     maxSupply: 1,
-    //     name: `The Anon Club #${index}`,
-    //     primarySaleHappened: true,
-    //     isMutable: true,
-    //     sellerFeeBasisPoints: 500,
-    //     symbol: "ANON",
-    //     updateAuthority: keypair,
-    //     collection,
-    //     collectionAuthority: keypair,
-    //   });
-    // }
 
     this.addNFTMint(mintNFTResponse.mintAddress, keypair.publicKey);
     console.log(`${index}: `, mintNFTResponse.mintAddress.toBase58());
