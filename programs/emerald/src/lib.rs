@@ -14,7 +14,7 @@ pub use user::*;
 pub use states::*;
 pub use common::*;
 
-declare_id!("CpTEQuYuqgx3fkbtVfLgkyem5GFWC2QCfo36mgYXnTgu");
+declare_id!("C6USKFudmyNt4YvstUUEi24FVgUu82vzjkW7wwQByN6S");
 
 #[program]
 pub mod emerald {
@@ -152,6 +152,16 @@ pub mod emerald {
         stake_nft::stake_nft(ctx, community_idx)
     }
 
+    pub fn stake_pnft<'a, 'b, 'c, 'info>(
+        ctx: Context<'a, 'b, 'c, 'info, StakePnftToPool<'info>>,
+        community_idx: u32,
+        _collection_idx: u32,
+        _community_account: u32,
+        _policy_idx: u32
+    ) -> Result<()> {
+        stake_pnft::stake_pnft(ctx, community_idx)
+    }
+
     pub fn unstake_nft<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, UnstakeNftToPool<'info>>,
         community_idx: u32,
@@ -172,6 +182,16 @@ pub mod emerald {
     ) -> Result<()> {
         claim_single::claim(ctx, community_idx)
     }
+
+    // pub fn unstake_pnft<'a, 'b, 'c, 'info>(
+    //     ctx: Context<'a, 'b, 'c, 'info, UnstakePnftToPool<'info>>,
+    //     community_idx: u32,
+    //     _collection_idx: u32,
+    //     _community_account: u32,
+    //     _policy_idx: u32
+    // ) -> Result<()> {
+    //     unstake_pnft::unstake_pnft(ctx, community_idx)
+    // }
 
     pub fn update_delegate<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, UpdateDelegate<'info>>,

@@ -1,17 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{ self, Approve, Token, TokenAccount };
-use mpl_token_metadata::instruction::{
-    freeze_delegated_account,
-    revoke_use_authority,
-    DelegateArgs,
-    LockArgs,
-};
+use mpl_token_metadata::instruction::freeze_delegated_account;
+use solana_program::program::invoke_signed;
 
-use mpl_token_metadata::instruction::builders::{ Delegate, Lock };
-use mpl_token_metadata::instruction::InstructionBuilder;
-
-use solana_program::program::{ invoke_signed, invoke };
-
+use crate::accounts;
 use crate::states::*;
 use crate::constants::*;
 use crate::errors::*;
@@ -20,7 +12,7 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
     ctx: Context<'a, 'b, 'c, 'info, StakeNftToPool<'info>>,
     community_idx: u32
 ) -> Result<()> {
-    let accounts: &mut StakeNftToPool = ctx.accounts;
+    let accounts: &mut StakeNftToPool<'info> = ctx.accounts;
 
     // Check NFT details against provided collection PDA
     accounts.collection.collection_member(
@@ -39,65 +31,17 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
         &ctx.program_id
     );
 
-    let main_pool_key: Pubkey = accounts.main_pool.key();
+    msg!("edition_info.key(): {:?}", accounts.edition_id.key());
 
-    // Seeds for freezing
-    let seeds = &[
-        COMMUNITY_SEED.as_bytes(),
-        main_pool_key.as_ref(),
-        &community_idx.to_be_bytes(),
-        &[rederived_bump],
-    ];
+    // Deelgate the NFT to the community pool
+    accounts.delegate(community_idx, rederived_bump)?;
 
     // Get users NFT amount
-    let current_nft_balance = accounts.user_nft_token_account.amount as f64;
-    let sub_owner = accounts.user_nft_token_account.owner;
+    let current_nft_balance: f64 = accounts.user_nft_token_account.amount as f64;
+    let sub_owner: Pubkey = accounts.user_nft_token_account.owner;
 
     msg!("currentNftBalance {:?} owned by {:?}", current_nft_balance, sub_owner);
     msg!("user calling {:?}", accounts.user.key());
-
-    // Deal with possible states of optional account using match
-    match &accounts.token_record {
-        Some(token_record) => {
-            // Delegate auth to this program
-            accounts.delegate_pnft(community_idx, rederived_bump)?;
-
-            // Lock user
-            accounts.lock_user(community_idx, rederived_bump)?;
-        }
-        None => {
-            // Delegate as owner authority to the community pool PDA
-            let cpi_accounts: Approve<'_> = Approve {
-                to: accounts.user_nft_token_account.to_account_info(),
-                delegate: accounts.community_pool.to_account_info(),
-                authority: accounts.user.to_account_info(),
-            };
-            let cpi_program: AccountInfo<'_> = accounts.token_program.to_account_info();
-            let cpi_context: CpiContext<'_, '_, '_, '_, Approve<'_>> = CpiContext::new(
-                cpi_program,
-                cpi_accounts
-            );
-            token::approve(cpi_context, 1)?;
-            // Its not the pNFT try old way
-            // Freeze delegated account
-            invoke_signed(
-                &freeze_delegated_account(
-                    *accounts.token_metadata_program.key,
-                    accounts.community_pool.key(),
-                    accounts.user_nft_token_account.key(),
-                    *accounts.edition_id.key,
-                    accounts.nft_mint.key()
-                ),
-                &[
-                    accounts.community_pool.to_account_info().clone(),
-                    accounts.user_nft_token_account.to_account_info(),
-                    accounts.edition_id.to_account_info(),
-                    accounts.nft_mint.to_account_info(),
-                ],
-                &[seeds]
-            )?;
-        }
-    }
 
     // Set stake time and payout rate
     msg!("Settign NFT details ");
@@ -128,149 +72,50 @@ pub fn stake_nft<'a, 'b, 'c, 'info>(
     Ok(())
 }
 
-// #[account(0, optional, writable, name="delegate_record", desc="Delegate record account")]
-// #[account(1, name="delegate", desc="Owner of the delegated account")]
-// #[account(2, writable, name="metadata", desc="Metadata account")]
-// #[account(3, optional, name="master_edition", desc="Master Edition account")]
-// #[account(4, optional, writable, name="token_record", desc="Token record account")]
-// #[account(5, name="mint", desc="Mint of metadata")]
-// #[account(6, optional, writable, name="token", desc="Token account of mint")]
-// #[account(7, signer, name="authority", desc="Update authority or token owner")]
-// #[account(8, signer, writable, name="payer", desc="Payer")]
-// #[account(9, name="system_program", desc="System Program")]
-// #[account(10, name="sysvar_instructions", desc="Instructions sysvar account")]
-// #[account(11, optional, name="spl_token_program", desc="SPL Token Program")]
-// #[account(12, optional, name="authorization_rules_program", desc="Token Authorization Rules Program")]
-// #[account(13, optional, name="authorization_rules", desc="Token Authorization Rules account")]
-
 impl<'info> StakeNftToPool<'info> {
-    fn delegate_pnft(
-        &self,
-        community_idx: u32,
-        rederived_bump: u8
-    ) -> anchor_lang::prelude::Result<()> {
-        let delegate_args = DelegateArgs::StakingV1 { amount: 1, authorization_data: None };
-
-        let delegate_instruction: Delegate = Delegate {
-            // Trying with no delegate record
-            delegate_record: None, //Some(self.token_record.clone().unwrap().key()), // Assuming you want to use token_record's pubkey
-
-            // Delegate will need to be some PDA of this program
-            delegate: self.community_pool.clone().key(),
-            metadata: self.mint_metadata.key(), // Assuming 'metadata' is associated with mint_metadata
-            master_edition: None, // Assuming there is no master edition in this context
-            token_record: Some(self.token_record.clone().unwrap().key()), // Optional, using token_record's pubkey
-            mint: self.nft_mint.key(), // Using the nft_mint pubkey
-            token: Some(self.user_nft_token_account.key()), // If there is a specific token to be delegated, provide its account key
-            authority: self.user.key(), // Using user's pubkey as authority
-            payer: self.user.key(), // Using user's pubkey as payer
-            system_program: self.system_program.key(), // System program pubkey
-            sysvar_instructions: self.rent.key(), // Rent sysvar instructions pubkey
-            spl_token_program: Some(self.token_program.key()), // SPL Token Program pubkey, optional
-            authorization_rules_program: None, // If applicable, provide the account info
-            authorization_rules: None, // If applicable, provide the account info
-            args: delegate_args, // From above
+    fn delegate(&self, community_idx: u32, rederived_bump: u8) -> anchor_lang::prelude::Result<()> {
+        // Delegate as owner authority to the community pool PDA
+        let cpi_accounts: Approve<'_> = Approve {
+            to: self.user_nft_token_account.to_account_info(),
+            delegate: self.community_pool.to_account_info(),
+            authority: self.user.to_account_info(),
         };
-
-        let ix = delegate_instruction.instruction();
-
-        // Below instructiosn must match the accounts in the Delegate instruction struct order
-        invoke(
-            &ix, // Use the instruction created from the Delegate struct
-            &[
-                // // self.token_record.clone().unwrap().to_account_info(), // delegate_record (also used as delegate)
-                // self.community_pool.clone().to_account_info(),
-                // self.mint_metadata.to_account_info(), // metadata
-                // self.user.to_account_info(), // authority (also used as payer)
-                // // None,
-                // self.token_record.clone().unwrap().to_account_info(), // token_record
-                // self.nft_mint.to_account_info(), // mint
-                // self.user_nft_token_account.to_account_info(),
-                // self.user.to_account_info(), // authority (also used as payer)
-                // self.user.to_account_info(), // authority (also used as payer)
-                // self.system_program.to_account_info(), // system_program
-                // self.rent.to_account_info(), // sysvar_instructions
-                // self.token_program.to_account_info(), // spl_token_program
-                // // No accounts for authorization_rules_program and authorization_rules as they are None
-
-                self.community_pool.clone().to_account_info(), // delegate
-                self.mint_metadata.to_account_info(), // metadata
-                self.token_record.clone().unwrap().to_account_info(), // token_record
-                self.nft_mint.to_account_info(), // mint
-                self.user_nft_token_account.to_account_info(), // token
-                self.user.to_account_info(), // authority
-                self.user.to_account_info(), // payer (repeated for clarity, same as authority)
-                self.system_program.to_account_info(), // system_program
-                self.rent.to_account_info(), // sysvar_instructions
-                self.token_program.to_account_info(), // spl_token_program
-            ]
-            // &[
-            //     &[
-            //         COMMUNITY_SEED.as_bytes(),
-            //         self.main_pool.key().as_ref(),
-            //         &community_idx.to_be_bytes(),
-            //         &[rederived_bump],
-            //     ],
-            // ] // Pass the seeds for the signed transaction
-        )?;
-
+        let cpi_program: AccountInfo<'_> = self.token_program.to_account_info();
+        let cpi_context: CpiContext<'_, '_, '_, '_, Approve<'_>> = CpiContext::new(
+            cpi_program,
+            cpi_accounts
+        );
+        token::approve(cpi_context, 1)?;
         Ok(())
     }
 
-    fn lock_user(
-        &self,
-        community_idx: u32,
-        rederived_bump: u8
-    ) -> anchor_lang::prelude::Result<()> {
-        // Spawn lock args
-        let lock_args = LockArgs::V1 { authorization_data: None };
+    fn freeze(&self, community_idx: u32, rederived_bump: u8) -> anchor_lang::prelude::Result<()> {
+        let main_pool_key: Pubkey = self.main_pool.key();
 
-        // Create lock instructions
-        let lock_instruction: Lock = Lock {
-            metadata: self.mint_metadata.key(), // Assuming 'metadata' is associated with mint_metadata
-            token_record: Some(self.token_record.clone().unwrap().key()), // Optional, using token_record's pubkey
-            token_owner: Some(self.user.key()), // Using user's pubkey as token_owner
-            edition: Some(self.edition_id.key()), // Assuming there is an edition_id in this context
-            mint: self.nft_mint.key(), // Using the nft_mint pubkey
-
-            // This is the token account
-            token: self.user_nft_token_account.key(),
-            authority: self.user.key(), // Using user's pubkey as authority
-            payer: self.user.key(), // Using user's pubkey as payer
-            system_program: self.system_program.key(), // System program pubkey
-            sysvar_instructions: self.rent.key(), // Rent sysvar instructions pubkey
-            spl_token_program: Some(self.token_program.key()), // SPL Token Program pubkey, optional
-            authorization_rules_program: None, // If applicable, provide the account info
-            authorization_rules: None, // If applicable, provide the account info
-            args: lock_args,
-        };
-
-        // Invoke signed
+        // Seeds for freezing
+        let seeds = &[
+            COMMUNITY_SEED.as_bytes(),
+            main_pool_key.as_ref(),
+            &community_idx.to_be_bytes(),
+            &[rederived_bump],
+        ];
+        // Freeze delegated account
         invoke_signed(
-            &lock_instruction.instruction(), // Use the instruction created from the Lock struct
+            &freeze_delegated_account(
+                *self.token_metadata_program.key,
+                self.community_pool.key(),
+                self.user_nft_token_account.key(),
+                *self.edition_id.key,
+                self.nft_mint.key()
+            ),
             &[
-                self.mint_metadata.to_account_info(), // metadata
-                self.token_record.clone().unwrap().to_account_info(), // token_record
-                self.user.to_account_info(), // token_owner
-                self.edition_id.to_account_info(), // edition
-                self.nft_mint.to_account_info(), // mint
-                self.user_nft_token_account.to_account_info(), // token
-                self.user.to_account_info(), // authority (also used as payer)
-                self.system_program.to_account_info(), // system_program
-                self.rent.to_account_info(), // sysvar_instructions
-                self.token_program.to_account_info(), // spl_token_program
-                // No accounts for authorization_rules_program and authorization_rules as they are None
+                self.community_pool.to_account_info().clone(),
+                self.user_nft_token_account.to_account_info(),
+                self.edition_id.to_account_info(),
+                self.nft_mint.to_account_info(),
             ],
-            &[
-                &[
-                    COMMUNITY_SEED.as_bytes(),
-                    self.main_pool.key().as_ref(),
-                    &community_idx.to_be_bytes(),
-                    &[rederived_bump],
-                ],
-            ] // Pass the seeds for the signed transaction
+            &[seeds]
         )?;
-
         Ok(())
     }
 }
@@ -366,11 +211,9 @@ pub struct StakeNftToPool<'info> {
 
     #[account(
         mut,
-        constraint = user_nft_token_account.mint == nft_mint.key() @StakingError::MintTokenAccountMismatch,
-
-        // Move to match otherwise
-        constraint = user_nft_token_account.owner == *user.key @StakingError::NotOwner,
-        constraint = user_nft_token_account.amount == 1 @StakingError::TokenAccountEmpty,
+        constraint = user_nft_token_account.mint == nft_mint.key(),
+        constraint = user_nft_token_account.owner == *user.key,
+        constraint = user_nft_token_account.amount == 1,
     )]
     pub user_nft_token_account: Account<'info, TokenAccount>,
 
@@ -387,7 +230,4 @@ pub struct StakeNftToPool<'info> {
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
     pub token_program: Program<'info, Token>,
-
-    #[account(mut)]
-    pub token_record: Option<AccountInfo<'info>>,
 }

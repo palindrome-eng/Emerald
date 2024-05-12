@@ -121,11 +121,7 @@ export class NftMint0 {
     keypair: Keypair,
     uri: string = this.uri
   ) {
-    let mintNFTResponse;
-
-    // if (this.parent.pNFT == true) {
-    console.log("This is a pNFT: ", this.parent.pNFT);
-    mintNFTResponse = await this.parent.metaplex.nfts().create({
+    const mintNFTResponse = await this.parent.metaplex.nfts().create({
       uri,
       maxSupply: 1,
       name: `The Anon Club #${index}`,

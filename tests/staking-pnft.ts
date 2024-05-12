@@ -15,7 +15,14 @@ import {
   COLLECTION_POLICY_CREATION_FEE,
   USER_COMMUNITY_ACCOUNT_CREATION_FEE,
 } from "./consts";
-import { PublicKey } from "@solana/web3.js";
+import {
+  PublicKey,
+  SYSVAR_RENT_PUBKEY,
+  ComputeBudgetProgram,
+  TransactionInstruction,
+  Transaction,
+  SYSVAR_INSTRUCTIONS_PUBKEY,
+} from "@solana/web3.js";
 import { keypairIdentity, Metaplex } from "@metaplex-foundation/js";
 import {
   TokenStandard,
@@ -684,37 +691,119 @@ describe("Emerald staking", async () => {
             ).toBase58()}`
           );
 
+          const masterEdition = await metaplex
+            .nfts()
+            .pdas()
+            .masterEdition({ mint: nft.mint });
+
+          console.log("Master edition: ", collectionM.masterEdition.toBase58());
+
+          // try {
+          //   const tx1 = await stakingProgram.methods
+          //     .stakePnft(
+          //       community.index,
+          //       collection.index,
+          //       userCommunity.index,
+          //       policy.index
+          //     )
+          //     .accounts({
+          //       mainPool: main.address,
+          //       user: user.keypair.publicKey,
+          //       userAccount: user.userMainAccount,
+          //       userCommunityAccount: userCommunity.userCommunityAddress,
+          //       communityPool: community.address,
+          //       nftTicket: userCommunity.getByMint(nft.mint).ticketPda,
+          //       nftMint: nft.mint,
+          //       userNftTokenAccount: await nft.getAta(user.keypair.publicKey),
+          //       collection: collection.address,
+          //       collectionPolicy: policy.address,
+          //       masterMintMetadata: nft.metadata,
+          //       mintMetadata: nft.metadata,
+          //       tokenMetadataProgram: METAPLEX,
+          //       editionId: nft.edition,
+          //       tokenRecord,
+          //       rent: SYSVAR_INSTRUCTIONS_PUBKEY,
+          //       tokenProgram: TOKEN_PROGRAM_ID,
+          //       masterEdition: masterEdition,
+          //     })
+          //     .signers([user.keypair])
+          //     .rpc();
+          // } catch (e) {
+          //   console.log("\nStaking error: ", e);
+          // }
+
+          // const txStake = await stakingProgram.methods
+          //   .stakePnft(
+          //     community.index,
+          //     collection.index,
+          //     userCommunity.index,
+          //     policy.index
+          //   )
+          //   .accounts({
+          //     mainPool: main.address,
+          //     user: user.keypair.publicKey,
+          //     userAccount: user.userMainAccount,
+          //     userCommunityAccount: userCommunity.userCommunityAddress,
+          //     communityPool: community.address,
+          //     nftTicket: userCommunity.getByMint(nft.mint).ticketPda,
+          //     nftMint: nft.mint,
+          //     userNftTokenAccount: await nft.getAta(user.keypair.publicKey),
+          //     collection: collection.address,
+          //     collectionPolicy: policy.address,
+          //     masterMintMetadata: nft.metadata,
+          //     mintMetadata: nft.metadata,
+          //     tokenMetadataProgram: METAPLEX,
+          //     editionId: nft.edition,
+          //     tokenRecord,
+          //     rent: SYSVAR_INSTRUCTIONS_PUBKEY,
+          //     tokenProgram: TOKEN_PROGRAM_ID,
+          //     masterEdition: masterEdition,
+          //   })
+          //   .instruction();
+
           try {
-            const tx1 = await stakingProgram.methods
-              .stakeNft(
-                community.index,
-                collection.index,
-                userCommunity.index,
-                policy.index
-              )
-              .accounts({
-                mainPool: main.address,
-                user: user.keypair.publicKey,
-                userAccount: user.userMainAccount,
-                userCommunityAccount: userCommunity.userCommunityAddress,
-                communityPool: community.address,
-                nftTicket: userCommunity.getByMint(nft.mint).ticketPda,
-                nftMint: nft.mint,
-                userNftTokenAccount: await nft.getAta(user.keypair.publicKey),
-                collection: collection.address,
-                collectionPolicy: policy.address,
-                masterMintMetadata: nft.metadata,
-                mintMetadata: nft.metadata,
-                tokenMetadataProgram: METAPLEX,
-                editionId: nft.edition,
-                tokenRecord,
-                tokenProgram: TOKEN_PROGRAM_ID,
-              })
-              .signers([user.keypair])
-              .rpc();
+            const transaction1 = new Transaction();
+
+            transaction1.add(
+              ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+              await stakingProgram.methods
+                .stakePnft(
+                  community.index,
+                  collection.index,
+                  userCommunity.index,
+                  policy.index
+                )
+                .accounts({
+                  mainPool: main.address,
+                  user: user.keypair.publicKey,
+                  userAccount: user.userMainAccount,
+                  userCommunityAccount: userCommunity.userCommunityAddress,
+                  communityPool: community.address,
+                  nftTicket: userCommunity.getByMint(nft.mint).ticketPda,
+                  nftMint: nft.mint,
+                  userNftTokenAccount: await nft.getAta(user.keypair.publicKey),
+                  collection: collection.address,
+                  collectionPolicy: policy.address,
+                  masterMintMetadata: nft.metadata,
+                  mintMetadata: nft.metadata,
+                  tokenMetadataProgram: METAPLEX,
+                  editionId: nft.edition,
+                  tokenRecord,
+                  rent: SYSVAR_INSTRUCTIONS_PUBKEY,
+                  tokenProgram: TOKEN_PROGRAM_ID,
+                  masterEdition: masterEdition,
+                })
+                .instruction()
+            );
+
+            const sig2 = await provider.sendAndConfirm(transaction1, [
+              user.keypair,
+            ]);
           } catch (e) {
             console.log("\nStaking error: ", e);
           }
+
+          // Sign and suibmit txInstructions
 
           // Unstake
           await delay(2);
