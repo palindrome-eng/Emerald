@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{ self, Token, TokenAccount, Transfer, Revoke };
-use mpl_token_metadata::instruction::thaw_delegated_account;
-use solana_program::program::invoke_signed;
+use mpl_token_metadata::instructions::ThawDelegatedAccountCpiBuilder;
 
 use crate::states::*;
 use crate::constants::*;
@@ -185,29 +184,25 @@ impl<'info> UnstakeNftToPool<'info> {
     }
 
     fn unfreeze(&self, community_idx: u32, rederived_bump: u8) -> anchor_lang::prelude::Result<()> {
-        invoke_signed(
-            &thaw_delegated_account(
-                self.token_metadata_program.key(),
-                self.community_pool.key(),
-                self.user_nft_token_account.key(),
-                self.edition_id.key(),
-                self.nft_mint.key()
-            ),
-            &[
-                self.community_pool.to_account_info(),
-                self.user_nft_token_account.to_account_info(),
-                self.edition_id.to_account_info(),
-                self.nft_mint.to_account_info(),
-            ],
-            &[
-                &[
-                    COMMUNITY_SEED.as_bytes(),
-                    self.main_pool.key().as_ref(),
-                    &community_idx.to_be_bytes(),
-                    &[rederived_bump],
-                ],
-            ]
-        )?;
+
+        let main_pool_key: Pubkey = self.main_pool.key();
+        let seeds = &[
+            COMMUNITY_SEED.as_bytes(),
+            main_pool_key.as_ref(),
+            &community_idx.to_be_bytes(),
+            &[rederived_bump],
+        ];
+
+        msg!("Seeds in unfreeze {:?}", seeds);
+
+        ThawDelegatedAccountCpiBuilder::new(&self.token_metadata_program.to_account_info())
+            .delegate(&self.community_pool.to_account_info())
+            .token_account(&self.user_nft_token_account.to_account_info())
+            .mint(&self.nft_mint.to_account_info())
+            .edition(&self.edition_id.to_account_info())
+            .token_program(&self.token_program.to_account_info())
+            .invoke_signed(&[seeds])?;
+        
         Ok(())
     }
 }

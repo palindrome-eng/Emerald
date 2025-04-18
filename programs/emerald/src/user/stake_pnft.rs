@@ -1,11 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{ Token, TokenAccount };
-use mpl_token_metadata::instruction::{ DelegateArgs, LockArgs };
-
-use mpl_token_metadata::instruction::builders::{ Delegate, Lock };
-use mpl_token_metadata::instruction::InstructionBuilder;
-
-use solana_program::program::{ invoke_signed, invoke };
+use mpl_token_metadata::instructions::{ DelegateCpiBuilder, LockV1CpiBuilder };
+use mpl_token_metadata::types::DelegateArgs;
 
 use crate::states::*;
 use crate::constants::*;
@@ -81,70 +77,27 @@ pub fn stake_pnft<'a, 'b, 'c, 'info>(
 
 impl<'info> StakePnftToPool<'info> {
     fn delegate(&self) -> anchor_lang::prelude::Result<()> {
-        let delegate_args = DelegateArgs::StakingV1 { amount: 1, authorization_data: None };
-
-        let delegate_instruction: Delegate = Delegate {
-            delegate_record: None,
-            delegate: self.community_pool.key(),
-            metadata: self.mint_metadata.key(), // Assuming 'metadata' is associated with mint_metadata
-            master_edition: Some(self.master_edition.key()), // Assuming there is no master edition in this context
-            token_record: Some(self.token_record.key()), // Optional, using token_record's pubkey
-            mint: self.nft_mint.key(), // Using the nft_mint pubkey
-            token: Some(self.user_nft_token_account.key()), // If there is a specific token to be delegated, provide its account key
-            authority: self.user.key(), // Using user's pubkey as authority
-            payer: self.user.key(), // Using user's pubkey as payer
-            system_program: self.system_program.key(), // System program pubkey
-            sysvar_instructions: self.rent.key(), // Rent sysvar instructions pubkey
-            spl_token_program: Some(self.token_program.key()), // SPL Token Program pubkey, optional
-            authorization_rules_program: None, // If applicable, provide the account info
-            authorization_rules: None, // If applicable, provide the account info
-            args: delegate_args, // From above
-        };
-
-        let ix = delegate_instruction.instruction();
-
-        // Below instructiosn must match the accounts in the Delegate instruction struct order
-        invoke(
-            &ix, // Use the instruction created from the Delegate struct
-            &[
-                self.community_pool.to_account_info(), // delegate
-                self.mint_metadata.to_account_info(), // metadata
-                self.master_edition.to_account_info(), // master_edition
-                self.token_record.to_account_info(), // token_record
-                self.nft_mint.to_account_info(), // mint
-                self.user_nft_token_account.to_account_info(), // token
-                self.user.to_account_info(), // authority
-                self.user.to_account_info(), // payer (repeated for clarity, same as authority)
-                self.system_program.to_account_info(), // system_program
-                self.rent.to_account_info(), // sysvar_instructions
-                self.token_program.to_account_info(), // spl_token_program
-            ]
-        )?;
+        DelegateCpiBuilder::new(&self.token_metadata_program.to_account_info())
+            .delegate(&self.community_pool.to_account_info())
+            .metadata(&self.mint_metadata.to_account_info())
+            .master_edition(Some(&self.master_edition.to_account_info()))
+            .token_record(Some(&self.token_record.to_account_info()))
+            .mint(&self.nft_mint.to_account_info())
+            .token(Some(&self.user_nft_token_account.to_account_info()))
+            .authority(&self.user.to_account_info())
+            .payer(&self.user.to_account_info())
+            .system_program(&self.system_program.to_account_info())
+            .sysvar_instructions(&self.rent.to_account_info())
+            .spl_token_program(Some(&self.token_program.to_account_info()))
+            .authorization_rules_program(None)
+            .authorization_rules(None)
+            .delegate_args( DelegateArgs::StakingV1 { amount: 1, authorization_data: None })
+            .invoke()?;
 
         Ok(())
     }
 
     fn freeze(&self, community_idx: u32, rederived_bump: u8) -> anchor_lang::prelude::Result<()> {
-        // Spawn lock args
-        let lock_args = LockArgs::V1 { authorization_data: None };
-
-        // Create lock instructions
-        let lock_instruction: Lock = Lock {
-            authority: self.community_pool.key(), // delegate
-            token_owner: Some(self.user.key()), // Using user's pubkey as token_owner
-            token: self.user_nft_token_account.key(),
-            mint: self.nft_mint.key(), // mint
-            metadata: self.mint_metadata.key(), // Assuming 'metadata' is associated with mint_metadata
-            edition: Some(self.edition_id.key()), // Assuming there is an edition_id in this context
-            token_record: Some(self.token_record.clone().key()), // Optional, using token_record's pubkey
-            payer: self.user.key(), // Using user's pubkey as payer
-            system_program: self.system_program.key(), // System program pubkey
-            sysvar_instructions: self.rent.key(), // Rent sysvar instructions pubkey
-            spl_token_program: Some(self.token_program.key()), // SPL Token Program pubkey, optional
-            authorization_rules_program: None, // If applicable, provide the account info
-            authorization_rules: None, // If applicable, provide the account info
-            args: lock_args,
-        };
 
         let main_pool_key: Pubkey = self.main_pool.key();
 
@@ -157,31 +110,21 @@ impl<'info> StakePnftToPool<'info> {
 
         msg!("Seeds in stake PNFT {:?}", seeds);
 
-        // Invoke signed
-        invoke_signed(
-            &lock_instruction.instruction(), // Use the instruction created from the Lock struct
-            &[
-                self.community_pool.to_account_info(), // delegate authority
-                self.user.clone().to_account_info(), // token owner
-                self.user_nft_token_account.to_account_info(), // token acciunt
-                self.nft_mint.to_account_info(), // mint
-                self.mint_metadata.to_account_info(), // mint metadata
-                self.edition_id.to_account_info(), // edition
-                self.token_record.to_account_info(), // token record
-                self.user.clone().to_account_info(), // payer
-                self.system_program.to_account_info(), // system_program
-                self.rent.to_account_info(), // sysvar_instructions
-                self.token_program.to_account_info(), // spl_token_program
-            ],
-            &[
-                &[
-                    COMMUNITY_SEED.as_bytes(),
-                    self.main_pool.key().as_ref(),
-                    &community_idx.to_be_bytes(),
-                    &[rederived_bump],
-                ],
-            ]
-        )?;
+        LockV1CpiBuilder::new(&self.token_metadata_program.to_account_info())
+            .authority(&self.community_pool.to_account_info())
+            .token_owner(Some(&self.user.to_account_info()))
+            .token(&self.user_nft_token_account.to_account_info())
+            .mint(&self.nft_mint.to_account_info())
+            .metadata(&self.mint_metadata.to_account_info())
+            .edition(Some(&self.edition_id.to_account_info()))
+            .token_record(Some(&self.token_record.to_account_info()))
+            .payer(&self.user.to_account_info())
+            .system_program(&self.system_program.to_account_info())
+            .sysvar_instructions(&self.rent.to_account_info())
+            .spl_token_program(Some(&self.token_program.to_account_info()))
+            .authorization_rules_program(None)
+            .authorization_rules(None)
+            .invoke_signed(&[seeds])?;
 
         Ok(())
     }
