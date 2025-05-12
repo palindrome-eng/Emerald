@@ -1,9 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{ self, Approve, Token, TokenAccount };
-use mpl_token_metadata::instruction::freeze_delegated_account;
-use solana_program::program::invoke_signed;
-
-use crate::accounts;
+use mpl_token_metadata::instructions::FreezeDelegatedAccountCpiBuilder;
 use crate::states::*;
 use crate::constants::*;
 use crate::errors::*;
@@ -103,22 +100,14 @@ impl<'info> StakeNftToPool<'info> {
             &[rederived_bump],
         ];
         // Freeze delegated account
-        invoke_signed(
-            &freeze_delegated_account(
-                *self.token_metadata_program.key,
-                self.community_pool.key(),
-                self.user_nft_token_account.key(),
-                *self.edition_id.key,
-                self.nft_mint.key()
-            ),
-            &[
-                self.community_pool.to_account_info().clone(),
-                self.user_nft_token_account.to_account_info(),
-                self.edition_id.to_account_info(),
-                self.nft_mint.to_account_info(),
-            ],
-            &[seeds]
-        )?;
+        FreezeDelegatedAccountCpiBuilder::new(&self.token_metadata_program.to_account_info())
+            .delegate(&self.community_pool.to_account_info())
+            .token_account(&self.user_nft_token_account.to_account_info())
+            .edition(&self.edition_id.to_account_info())
+            .mint(&self.nft_mint.to_account_info())
+            .token_program(&self.token_program.to_account_info())
+            .invoke_signed(&[seeds])?;
+
         Ok(())
     }
 }
